@@ -1,0 +1,10 @@
+/home/chiara/Documents/git/src/dealII/biofilm/dealii/source/ALE/CMakeFiles/step-fsi.dir
+/home/chiara/Documents/git/src/dealII/biofilm/dealii/source/ALE/CMakeFiles/run.dir
+/home/chiara/Documents/git/src/dealII/biofilm/dealii/source/ALE/CMakeFiles/debug.dir
+/home/chiara/Documents/git/src/dealII/biofilm/dealii/source/ALE/CMakeFiles/release.dir
+/home/chiara/Documents/git/src/dealII/biofilm/dealii/source/ALE/CMakeFiles/runclean.dir
+/home/chiara/Documents/git/src/dealII/biofilm/dealii/source/ALE/CMakeFiles/distclean.dir
+/home/chiara/Documents/git/src/dealII/biofilm/dealii/source/ALE/CMakeFiles/strip_comments.dir
+/home/chiara/Documents/git/src/dealII/biofilm/dealii/source/ALE/CMakeFiles/info.dir
+/home/chiara/Documents/git/src/dealII/biofilm/dealii/source/ALE/CMakeFiles/edit_cache.dir
+/home/chiara/Documents/git/src/dealII/biofilm/dealii/source/ALE/CMakeFiles/rebuild_cache.dir
