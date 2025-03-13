@@ -150,7 +150,7 @@ namespace ALE_Transformations
   inline
   double get_co (unsigned int q, std::vector<Vector<double> > old_solution_values)
   {      
-    return old_solution_values[q](dim+dim+1);      
+    return old_solution_values[q](dim+dim+dim+1);      
   }
 
   template <int dim> 
@@ -230,8 +230,8 @@ namespace ALE_Transformations
   Tensor<1,dim> get_grad_co (unsigned int q, std::vector<std::vector<Tensor<1,dim> > > old_solution_grads)  
   {      
     Tensor<1,dim> grad_co;      
-    grad_co[0] =  old_solution_grads[q][dim+dim+1][0];
-    grad_co[1] =  old_solution_grads[q][dim+dim+1][1];
+    grad_co[0] =  old_solution_grads[q][dim+dim+dim+1][0];
+    grad_co[1] =  old_solution_grads[q][dim+dim+dim+1][1];
       
     return grad_co;
   }
@@ -354,6 +354,31 @@ namespace ALE_Transformations
     tmp[1] = phi_i_u[1];
      
     return tmp;    
+  }
+ 
+  template <int dim> 
+  inline
+  Tensor<1,dim> get_w (unsigned int q, std::vector<Vector<double> > old_solution_values)
+  {
+    Tensor<1,dim> w;     
+    w[0] = old_solution_values[q](dim+dim+1);
+    w[1] = old_solution_values[q](dim+dim+2);
+     
+    return w;          
+  }
+
+  template <int dim> 
+  inline
+  Tensor<2,dim> get_grad_w (unsigned int q, std::vector<std::vector<Tensor<1,dim> > > old_solution_grads)   
+  {   
+    Tensor<2,dim> 
+    tmp;     
+    tmp[0][0] = old_solution_grads[q][dim+dim+1][0];
+    tmp[0][1] = old_solution_grads[q][dim+dim+1][1];
+    tmp[1][0] = old_solution_grads[q][dim+dim+2][0];
+    tmp[1][1] = old_solution_grads[q][dim+dim+2][1];
+
+    return tmp;
   }
 
   template <int dim> 
@@ -637,149 +662,6 @@ namespace NSE_in_ALE
     return density * (convection_LinU  + convection_LinV);
   }
 
-
-
-
-  /************************************************************************************************
-   * Linearization convection term concentration sym( ALE( v_f * nabla c_f ) )
-   ************************************************************************************************/
-    template <int dim> 
-  inline
-  double get_Convection_c_LinAll_short (const Tensor<1,dim> phi_i_grads_c,
-             const Tensor<1,dim> phi_i_v,
-             const double J,
-             const double J_LinU,
-             const Tensor<2,dim> F_Inverse,
-             const Tensor<2,dim> F_Inverse_LinU,                
-             const Tensor<1,dim> v,
-             const Tensor<1,dim> grad_co
-             )
-  {
-    // Linearization of concentration fluid convection term
-    // sym ( v_f F^(-1) nabla c_f J )
-    
-    double convection_c_LinU = 0;
-    double convection_c_LinV = 0;
-
-
-    //double convection_c_LinU = (J_LinU * grad_co * F_Inverse * v +
-    //                            J * grad_co_T * F_Inverse_LinU * v);
-    //double convection_c_LinV = (J * (phi_i_grads_c_T * F_Inverse * v + 
-    //                            grad_co * F_Inverse * phi_i_v));
-
-    for( int i=0; i<dim; i++ )
-    {
-      for( int j=0; j<dim; j++ )
-      {
-        convection_c_LinU += J_LinU * grad_co[i] * F_Inverse[j][i] * v[j]
-                            + J * grad_co[i] * F_Inverse_LinU[j][i] * v[j];
-        convection_c_LinV += J * phi_i_grads_c[i] * F_Inverse[j][i] * v[j]
-                            + J * grad_co[i] * F_Inverse[j][i] * phi_i_v[j];
-      }
-    }
-    //double convection_c_LinU = J_LinU * F_Inverse * v * grad_co
-    //                            + J * F_Inverse_LinU * v * grad_co ;
-    //double convection_c_LinV = J * F_Inverse * v * phi_i_grads_c
-    //                            + J * F_Inverse * phi_i_v * grad_co;
-    
-    return convection_c_LinU + convection_c_LinV;
-  }
-
-  template <int dim> 
-  inline
-  double get_Convection_c_u_LinAll_short (const Tensor<1,dim> phi_i_grads_c,
-         const Tensor<1,dim> phi_i_u,
-         const double J,
-         const double J_LinU,         
-         const Tensor<2,dim>  F_Inverse,
-         const Tensor<2,dim>  F_Inverse_LinU,
-         const Tensor<1,dim>  u,
-         const Tensor<1,dim>  grad_co        
-         )
-  {
-    double convection_c_LinU = 0;
-    double convection_c_LinC = 0;
-
-    for( int i=0; i<dim; i++ )
-    {
-      for( int j=0; j<dim; j++ )
-      {
-        convection_c_LinU += J_LinU * grad_co[i] * F_Inverse[j][i] * u[j]
-                            + J * grad_co[i] * F_Inverse_LinU[j][i] * u[j]
-                            + J * grad_co[i] * F_Inverse[j][i] * phi_i_u[j];
-        convection_c_LinC += J * phi_i_grads_c[i] * F_Inverse[j][i] * phi_i_u[j];
-      }
-    }
-
-    /*double convection_c_LinU = (J_LinU * F_Inverse * u * grad_co +
-                               J * F_Inverse_LinU * u * grad_co +
-                               J * F_Inverse * phi_i_u * grad_co);
-    double convection_c_LinV = (J * F_Inverse * u * phi_i_grads_c); */
-        
-    return convection_c_LinU + convection_c_LinC;
-  }
-
-  template <int dim> 
-  inline
-  double get_Convection_c_u_old_LinAll_short (const Tensor<1,dim> phi_i_grads_c,        
-             const double J,
-             const double J_LinU,        
-             const Tensor<2,dim>  F_Inverse,
-             const Tensor<2,dim>  F_Inverse_LinU,             
-             const Tensor<1,dim>  old_timestep_solution_displacement, 
-             const Tensor<1,dim>  grad_co             
-             )
-  {
-    // Linearization of fluid convection term
-    // J(F^{-1}v\cdot\grad)u = J grad(v)F^{-1}u
-    
-    /*double convection_c_LinU = (J_LinU * grad_co * F_Inverse * old_timestep_solution_displacement +
-                              J * grad_co * F_Inverse_LinU * old_timestep_solution_displacement);
-    double convection_c_LinV = (J * phi_i_grads_c * F_Inverse * old_timestep_solution_displacement);*/
-    
-    /*double convection_c_LinU = J_LinU * old_timestep_solution_displacement * F_Inverse * grad_co
-                                + J * old_timestep_solution_displacement * F_Inverse_LinU * grad_co;
-    double convection_c_LinC = J * old_timestep_solution_displacement * F_Inverse * phi_i_grads_c;*/
-
-    double convection_c_LinU = 0;
-    double convection_c_LinC = 0;
-
-    for( int i=0; i<dim; i++ )
-    {
-      for( int j=0; j<dim; j++ )
-      {
-        convection_c_LinU += J_LinU * grad_co[i] * F_Inverse[j][i] * old_timestep_solution_displacement[j]
-                            + J * grad_co[i] * F_Inverse_LinU[j][i] * old_timestep_solution_displacement[j];
-        convection_c_LinC += J * phi_i_grads_c[i] * F_Inverse[j][i] * old_timestep_solution_displacement[j];
-      }
-    }
-    return convection_c_LinU  + convection_c_LinC;
-  }
-
-  /************************************************************************************************
-   * 
-   ************************************************************************************************/
-  template <int dim> 
-  inline
-  Tensor<1,dim> get_diffusion_term_conc_LinAll (const Tensor<1,dim> phi_i_grads_c,        
-             const double J,
-             const double J_LinU,        
-             const Tensor<2,dim>  F_Inverse,
-             const Tensor<2,dim>  F_Inverse_LinU,
-             const Tensor<2,dim>  F_Inverse_T,
-             const Tensor<2,dim>  F_Inverse_T_LinU,
-             const Tensor<1,dim>  grad_co,
-             double Df
-            )
-  {
-    Tensor<1,dim> diffusion_c_LinU = J_LinU * Df * grad_co * F_Inverse * F_Inverse_T
-                                + J * Df * grad_co * F_Inverse_LinU * F_Inverse_T
-                                + J * Df * grad_co * F_Inverse * F_Inverse_T_LinU;
-    Tensor<1,dim> diffusion_c_LinC = J * Df * phi_i_grads_c * F_Inverse * F_Inverse_T;
-    return diffusion_c_LinU + diffusion_c_LinC;
-  }
-  
-
   template <int dim> 
   inline
   Tensor<1,dim> 
@@ -792,6 +674,7 @@ namespace NSE_in_ALE
               const double density)
   {   
     return density/2.0 * (J_LinU * (v - old_timestep_v) + (J + old_timestep_J) * phi_i_v);
+    
   }
 
   template <int dim> 
@@ -866,7 +749,7 @@ public:
   BoundaryParabel (double time,
        const double u_y,
        const double compute_short_scale)    
-    : Function<dim>(dim+dim+1+1) 
+    : Function<dim>(dim+dim+dim+1+1) 
   {
     _time = time;  
     _u_y = u_y;
@@ -916,7 +799,7 @@ BoundaryParabel<dim>::value (const Point<dim>  &p,
   double beta_inflow = 1.0e-1; //0.1;
 
   //changed to have a boundary condition for the concentration
-  if (component == 0 || component == 5)   
+  if (component == 0 ) //|| component == 7)   
   {
     if (!_compute_short_scale)
     {
@@ -936,15 +819,8 @@ BoundaryParabel<dim>::value (const Point<dim>  &p,
       return total_inflow;
     }
   }
-  else if(component == 5)
-  {
-    double sin_tmp = (1.0 + std::sin(2.0*pi*_time));
-
-    double total_concentration = ( (p(0) == -5) && (p(1) <= 1.0) && (p(1) >= -1.0) ? 10 - ( inflow_velocity * 
-                         sin_tmp * 
-                         ((beta_inflow + 10.0 * (1.0 -  _u_y)) * (1.0 - p(1)*p(1))) ) : 0);
-
-      return total_concentration;
+  //else if(component == 7)
+  //  return 1;
   return 0;
 }
 
@@ -1042,8 +918,6 @@ private:
   void compute_vorticity();
   void compute_minimal_J();
 
-  int number_coefficients = dim+dim+1+1;
-
   const unsigned int   degree;
   
   Triangulation<dim>   triangulation;
@@ -1082,7 +956,7 @@ private:
 
   // Other parameters to control the fluid mesh motion 
   double cell_diameter;  
-  double alpha_u, alpha_us;
+  double alpha_u, alpha_wf, alpha_ws, alpha_us;
   
   double pressure_fluid_x, alpha_growth;
   double stop_growth;
@@ -1107,6 +981,7 @@ FSI_ALE_Problem<dim>::FSI_ALE_Problem (const unsigned int degree)
                 fe (FE_Q<dim>(degree+1), dim,                    
         FE_Q<dim>(degree+1), dim,       
         FE_DGP<dim>(degree), 1,
+        FE_Q<dim>(degree+1), dim,
         FE_Q<dim>(degree), 1), // concentration (scalar-valued)),      
                 dof_handler (triangulation),
     timer (std::cout, TimerOutput::summary, TimerOutput::cpu_times)   
@@ -1149,15 +1024,18 @@ void FSI_ALE_Problem<dim>::set_runtime_parameters ()
   // Diffusion parameters to control the fluid mesh motion
   // The higher these parameters the stiffer the fluid mesh.
   alpha_u  = 1.0e-5;
-  alpha_us = 1.0;
+  alpha_wf = 1.0e-5;
+
+  alpha_us = 1.0e+5;
+  alpha_ws = 1.0e-5;
 
   //Biofilm Concentration coefficients
   k = 3*1e-2; //max Wachstumsgeschwindigkeit
   K = 3*1e-3; //Halb-Sättigungskonstante - Michaelis-Menten-Konstante 
 
   //Diffusion coefficients
-  Df = 2.5 * 1e-06;
-  Ds = 1e-09;
+  Df = 2.5 * 1e-09;
+  Ds = 1e-12;
   
   // Timestepping schemes
   //BE, CN, CN_shifted
@@ -1165,7 +1043,7 @@ void FSI_ALE_Problem<dim>::set_runtime_parameters ()
 
   // Timestep size:
   // TODO
-  timestep = 1.0;//43200.0; //86400.0;
+  timestep = 43200.0; //86400.0;
 
   // Maximum number of timesteps:
   // FSI 1: 25 , T= 25   (timestep == 1.0)
@@ -1237,11 +1115,13 @@ void FSI_ALE_Problem<dim>::setup_system ()
   // scalar pressure field:              2
   // additional displacement in x and y: 3
   // scalar concentration field:         4
-  std::vector<unsigned int> block_component (6,0);
+  std::vector<unsigned int> block_component (8,0);
   block_component[dim] = 1;                     //displacement
   block_component[dim+1] = 1;                   //displacement
   block_component[dim+dim] = 2;                 //pressure
-  block_component[dim+dim+1] = 3;           //concentration
+  block_component[dim+dim+1] = 3;               //displacement (biharmonic)
+  block_component[dim+dim+dim] = 3;             //displacement (biharmonic)
+  block_component[dim+dim+dim+1] = 4;           //concentration
  
   DoFRenumbering::component_wise (dof_handler, block_component);
 
@@ -1253,46 +1133,57 @@ void FSI_ALE_Problem<dim>::setup_system ()
   }
   constraints.close ();
   
-  std::vector<unsigned int> dofs_per_block (3);
+  std::vector<unsigned int> dofs_per_block (5);
   dofs_per_block = DoFTools::count_dofs_per_fe_block (dof_handler, block_component);  
   const unsigned int n_v = dofs_per_block[0],
     n_u = dofs_per_block[1],
     n_p = dofs_per_block[2],
-    n_c = dofs_per_block[3];
+    n_w = dofs_per_block[3],
+    n_c = dofs_per_block[4];
 
   std::cout << "Cells:\t"
             << triangulation.n_active_cells()
             << std::endl      
             << "DoFs:\t"
             << dof_handler.n_dofs()
-            << " (" << n_v << '+' << n_u << '+' << n_p << '+' << n_c << ')'
+            << " (" << n_v << '+' << n_u << '+' << n_p << '+' << n_w << '+' << n_c << ')'
             << std::endl;
 
 
  
       
  {
-    BlockDynamicSparsityPattern csp (4,4);
+    BlockDynamicSparsityPattern csp (5,5);
 
     csp.block(0,0).reinit (n_v, n_v);
     csp.block(0,1).reinit (n_v, n_u);
     csp.block(0,2).reinit (n_v, n_p);
-    csp.block(0,3).reinit (n_v, n_c);
+    csp.block(0,3).reinit (n_v, n_w);
+    csp.block(0,4).reinit (n_v, n_c);
   
     csp.block(1,0).reinit (n_u, n_v);
     csp.block(1,1).reinit (n_u, n_u);
     csp.block(1,2).reinit (n_u, n_p);
-    csp.block(1,3).reinit (n_u, n_c);
+    csp.block(1,3).reinit (n_u, n_w);
+    csp.block(1,4).reinit (n_u, n_c);
   
     csp.block(2,0).reinit (n_p, n_v);
     csp.block(2,1).reinit (n_p, n_u);
     csp.block(2,2).reinit (n_p, n_p);
-    csp.block(2,3).reinit (n_p, n_c);
+    csp.block(2,3).reinit (n_p, n_w);
+    csp.block(2,4).reinit (n_p, n_c);
 
-    csp.block(3,0).reinit (n_c, n_v);
-    csp.block(3,1).reinit (n_c, n_u);
-    csp.block(3,2).reinit (n_c, n_p);
-    csp.block(3,3).reinit (n_c, n_c);
+    csp.block(3,0).reinit (n_w, n_v);
+    csp.block(3,1).reinit (n_w, n_u);
+    csp.block(3,2).reinit (n_w, n_p);
+    csp.block(3,3).reinit (n_w, n_w);
+    csp.block(3,4).reinit (n_w, n_c);
+
+    csp.block(4,0).reinit (n_c, n_v);
+    csp.block(4,1).reinit (n_c, n_u);
+    csp.block(4,2).reinit (n_c, n_p);
+    csp.block(4,3).reinit (n_c, n_w);
+    csp.block(4,4).reinit (n_c, n_c);
  
     csp.collect_sizes();    
   
@@ -1305,39 +1196,43 @@ void FSI_ALE_Problem<dim>::setup_system ()
   system_matrix.reinit (sparsity_pattern);
 
   // Actual solution at time step n
-  solution.reinit (4);
+  solution.reinit (5);
   solution.block(0).reinit (n_v);
   solution.block(1).reinit (n_u);
   solution.block(2).reinit (n_p);
-  solution.block(3).reinit (n_c);
+  solution.block(3).reinit (n_w);
+  solution.block(4).reinit (n_c);
  
   solution.collect_sizes ();
  
   // Old timestep solution at time step n-1
-  old_timestep_solution.reinit (4);
+  old_timestep_solution.reinit (5);
   old_timestep_solution.block(0).reinit (n_v);
   old_timestep_solution.block(1).reinit (n_u);
   old_timestep_solution.block(2).reinit (n_p);
-  old_timestep_solution.block(3).reinit (n_c);
+  old_timestep_solution.block(3).reinit (n_w);
+  old_timestep_solution.block(4).reinit (n_c);
  
   old_timestep_solution.collect_sizes ();
 
 
   // Updates for Newton's method
-  newton_update.reinit (4);
+  newton_update.reinit (5);
   newton_update.block(0).reinit (n_v);
   newton_update.block(1).reinit (n_u);
   newton_update.block(2).reinit (n_p);
-  newton_update.block(3).reinit (n_c);
+  newton_update.block(3).reinit (n_w);
+  newton_update.block(4).reinit (n_c);
  
   newton_update.collect_sizes ();
  
   // Residual for  Newton's method
-  system_rhs.reinit (4);
+  system_rhs.reinit (5);
   system_rhs.block(0).reinit (n_v);
   system_rhs.block(1).reinit (n_u);
   system_rhs.block(2).reinit (n_p);
-  system_rhs.block(3).reinit (n_c);
+  system_rhs.block(3).reinit (n_w);
+  system_rhs.block(4).reinit (n_c);
 
   system_rhs.collect_sizes ();
 
@@ -1405,39 +1300,40 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
   const FEValuesExtractors::Vector velocities (0);
   const FEValuesExtractors::Vector displacements (dim); // 2
   const FEValuesExtractors::Scalar pressure (dim+dim); // 4
-  const FEValuesExtractors::Scalar concentration (dim+dim+1); // 5
+  const FEValuesExtractors::Vector displacements_w (dim+dim+1); // 5
+  const FEValuesExtractors::Scalar concentration (dim+dim+dim+1); // 7
  
 
   // We declare Vectors and Tensors for 
   // the solutions at the previous Newton iteration:
   std::vector<Vector<double> > old_solution_values (n_q_points, 
-                Vector<double>(number_coefficients));
+                Vector<double>(dim+dim+dim+1+1));
 
   std::vector<std::vector<Tensor<1,dim> > > old_solution_grads (n_q_points, 
-                std::vector<Tensor<1,dim> > (number_coefficients));
+                std::vector<Tensor<1,dim> > (dim+dim+dim+1+1));
 
   std::vector<Vector<double> >  old_solution_face_values (n_face_q_points, 
-                Vector<double>(number_coefficients));
+                Vector<double>(dim+dim+dim+1+1));
        
   std::vector<std::vector<Tensor<1,dim> > > old_solution_face_grads (n_face_q_points, 
-                     std::vector<Tensor<1,dim> > (number_coefficients));
+                     std::vector<Tensor<1,dim> > (dim+dim+dim+1+1));
     
   // We declare Vectors and Tensors for 
   // the solution at the previous time step:
    std::vector<Vector<double> > old_timestep_solution_values (n_q_points, 
-                Vector<double>(number_coefficients));
+                Vector<double>(dim+dim+dim+1+1));
 
 
   std::vector<std::vector<Tensor<1,dim> > > old_timestep_solution_grads (n_q_points, 
-              std::vector<Tensor<1,dim> > (number_coefficients));
+              std::vector<Tensor<1,dim> > (dim+dim+dim+1+1));
 
 
   std::vector<Vector<double> >   old_timestep_solution_face_values (n_face_q_points, 
-                    Vector<double>(number_coefficients));
+                    Vector<double>(dim+dim+dim+1+1));
   
     
   std::vector<std::vector<Tensor<1,dim> > >  old_timestep_solution_face_grads (n_face_q_points, 
-                         std::vector<Tensor<1,dim> > (number_coefficients));
+                         std::vector<Tensor<1,dim> > (dim+dim+dim+1+1));
    
   // Declaring test functions:
   std::vector<Tensor<1,dim> > phi_i_v (dofs_per_cell); 
@@ -1445,6 +1341,8 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
   std::vector<double>         phi_i_p(dofs_per_cell);   
   std::vector<Tensor<1,dim> > phi_i_u (dofs_per_cell); 
   std::vector<Tensor<2,dim> > phi_i_grads_u(dofs_per_cell);
+  std::vector<Tensor<1,dim> > phi_i_w (dofs_per_cell); 
+  std::vector<Tensor<2,dim> > phi_i_grads_w(dofs_per_cell);
   std::vector<double>         phi_i_c(dofs_per_cell);   
   std::vector<Tensor<1,dim> > phi_i_grads_c (dofs_per_cell); 
 
@@ -1484,6 +1382,8 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
           phi_i_p[k]       = fe_values[pressure].value (k, q);                   
           phi_i_u[k]       = fe_values[displacements].value (k, q);
           phi_i_grads_u[k] = fe_values[displacements].gradient (k, q);
+          phi_i_w[k]       = fe_values[displacements_w].value (k, q);
+          phi_i_grads_w[k] = fe_values[displacements_w].gradient (k, q);
           phi_i_c[k]       = fe_values[concentration].value (k, q);
           phi_i_grads_c[k] = fe_values[concentration].gradient (k, q);
         }
@@ -1498,7 +1398,9 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
         const Tensor<2,dim> pI = ALE_Transformations::get_pI<dim> (q, old_solution_values);
         const Tensor<1,dim> v = ALE_Transformations::get_v<dim> (q, old_solution_values);
         const Tensor<1,dim> u = ALE_Transformations::get_u<dim> (q,old_solution_values);
-        const Tensor<2,dim> grad_u = ALE_Transformations ::get_grad_u<dim> (q, old_solution_grads);
+        //const Tensor<1,dim> w = ALE_Transformations::get_w<dim> (q, old_solution_vaphi_i_clues); 
+        //const Tensor<2,dim> grad_u = ALE_Transformations ::get_grad_u<dim> (q, old_solution_grads);
+        //const Tensor<2,dim> grad_w = ALE_Transformations ::get_grad_w<dim> (q, old_solution_grads);
         const Tensor<2,dim> grad_v = ALE_Transformations::get_grad_v<dim> (q, old_solution_grads);  
         const Tensor<1,dim> grad_co = ALE_Transformations::get_grad_co<dim> (q, old_solution_grads);
         const Tensor<2,dim> grad_v_T = ALE_Transformations::get_grad_v_T<dim> (grad_v);
@@ -1533,7 +1435,7 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
           const Tensor<2,dim> J_F_Inverse_T_LinU = ALE_Transformations::get_J_F_Inverse_T_LinU<dim> (phi_i_grads_u[i]);
           const Tensor<2,dim> F_Inverse_LinU = ALE_Transformations::get_F_Inverse_LinU (phi_i_grads_u[i], J, J_LinU, q, old_solution_grads);
           const Tensor<2,dim> F_Inverse_T_LinU = transpose(F_Inverse_LinU);
-          const Tensor<2,dim> stress_fluid_ALE_1st_term_LinAll = NSE_in_ALE::get_stress_fluid_ALE_1st_term_LinAll<dim> (pI, F_Inverse_T, J_F_Inverse_T_LinU, pI_LinP, J);
+          const Tensor<2,dim>  stress_fluid_ALE_1st_term_LinAll = NSE_in_ALE::get_stress_fluid_ALE_1st_term_LinAll<dim> (pI, F_Inverse_T, J_F_Inverse_T_LinU, pI_LinP, J);
           const Tensor<2,dim> stress_fluid_ALE_2nd_term_LinAll = NSE_in_ALE::get_stress_fluid_ALE_2nd_term_LinAll_short 
                                                                     (J_F_Inverse_T_LinU, sigma_ALE, grad_v, grad_v_LinV, F_Inverse, F_Inverse_LinU, J, viscosity, density_fluid);  
           const Tensor<1,dim> convection_fluid_LinAll_short = NSE_in_ALE::get_Convection_LinAll_short<dim> 
@@ -1542,20 +1444,30 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
           const Tensor<1,dim> accelaration_term_LinAll = NSE_in_ALE::get_accelaration_term_LinAll (phi_i_v[i], v, old_timestep_v, J_LinU, J, old_timestep_J, density_fluid);
           const Tensor<1,dim> convection_fluid_u_LinAll_short =  NSE_in_ALE::get_Convection_u_LinAll_short<dim> (phi_i_grads_v[i], phi_i_u[i], J,J_LinU, F_Inverse, F_Inverse_LinU, u, grad_v, density_fluid);
           const Tensor<1,dim> convection_fluid_u_old_LinAll_short = NSE_in_ALE::get_Convection_u_old_LinAll_short<dim> (phi_i_grads_v[i], J, J_LinU, F_Inverse, F_Inverse_LinU, old_timestep_u, grad_v, density_fluid);
-
-          /**********
-           * Concentration
-           **********/
-          //Concentration Convection Term Linearized sym((v_f-w)F^-1 * nabla c_f J phi_c)
-          const double convection_fluid_c_LinAll_short = NSE_in_ALE::get_Convection_c_LinAll_short<dim> (phi_i_grads_c[i], phi_i_v[i], J, J_LinU, F_Inverse, F_Inverse_LinU, v, grad_co);
-          const double convection_fluid_c_u_LinAll_short =  NSE_in_ALE::get_Convection_c_u_LinAll_short<dim> (phi_i_grads_c[i], phi_i_u[i], J,J_LinU, F_Inverse, F_Inverse_LinU, u, grad_co);
-          const double convection_fluid_c_u_old_LinAll_short = NSE_in_ALE::get_Convection_c_u_old_LinAll_short<dim> (phi_i_grads_c[i], J, J_LinU, F_Inverse, F_Inverse_LinU, old_timestep_u, grad_co);
           
-          //Concentration Accelaration Term Linearized: sym(partial_t c_f phi J)
+          //Accelaration Term: (ALE) partial_t c_f phi J -> (Linearized) 
           const double accelaration_term_conc_LinAll = NSE_in_ALE::get_accelaration_term_conc_LinAll<dim> (phi_i_c[i], co, old_timestep_co, J_LinU, J, old_timestep_J, theta);
-          
-          //sym+( J F^(-1) D_f nabla c_f  F^(-T))
-          const Tensor<1,dim> diffusion_term_conc_LinAll = NSE_in_ALE::get_diffusion_term_conc_LinAll<dim> (phi_i_grads_c[i], J, J_LinU, F_Inverse, F_Inverse_LinU, F_Inverse_T, F_Inverse_T_LinU, grad_co, Df);
+          //sym ( v_f F^(-1) nabla c_f J )
+          const double a = phi_i_v[i] * F_Inverse * grad_co * J;
+          const double b = v * (F_Inverse * phi_i_grads_u[i] * F_Inverse) * grad_co * J;
+          const double c = v * F_Inverse * phi_i_grads_c[i] * J;
+          const double d = v * F_Inverse * grad_co *J_LinU;
+          //sym( D_f F^(-1) nabla c_f F^(-1) J )
+          //const Tensor<1,dim> e = Df * ( F_Inverse * phi_i_grads_u[i] * F_Inverse ) * grad_co * F_Inverse * J;
+          //const Tensor<1,dim> f = Df * F_Inverse * phi_i_grads_c[i] * F_Inverse *J;
+          //const Tensor<1,dim> g = Df * F_Inverse * grad_co * (F_Inverse * phi_i_grads_u[i] * F_Inverse) * J;
+          //const Tensor<1,dim> h = Df * F_Inverse * grad_co * F_Inverse * J_LinU;
+          //sym ( J F^(-1) D_f nabla c_f  F^(-T))
+          const Tensor<1,dim> e = J_LinU * F_Inverse * Df * grad_co * F_Inverse_T;
+          const Tensor<1,dim> f = J * F_Inverse_LinU * Df * grad_co * F_Inverse_T;
+          const Tensor<1,dim> g = J * F_Inverse * Df * phi_i_grads_c[i] * F_Inverse_T;
+          const Tensor<1,dim> h = J * F_Inverse * Df * grad_co * F_Inverse_T_LinU;
+          //sym( w F^(-1) nabla c_f J )
+          double l = 1./timestep * phi_i_u[i]*F_Inverse * grad_co * J;
+          double m = 1./timestep * ( u - old_timestep_u ) * (F_Inverse * phi_i_grads_u[i] * F_Inverse) *grad_co * J;
+          double n = 1./timestep * ( u - old_timestep_u ) * F_Inverse * phi_i_grads_c[i] * J;
+          double o = 1./timestep * ( u - old_timestep_u ) * F_Inverse * grad_co * J_LinU; //TODO: pruefen -> ist u-old... richig oder muesste es old sein? -> Tensor<1,dim> statt double
+
 
           //Schleife der Testfunktion
           // Inner loop for dofs
@@ -1566,33 +1478,43 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
             if (comp_j == 0 || comp_j == 1)
             {   
               local_matrix(j,i) += (compute_short_scale * accelaration_term_LinAll * phi_i_v[j] +   
-                                    + timestep * theta *            
-                                    convection_fluid_LinAll_short * phi_i_v[j]              
-                                    - convection_fluid_u_LinAll_short * phi_i_v[j]
-                                    + convection_fluid_u_old_LinAll_short * phi_i_v[j]
-                                    + timestep * scalar_product(stress_fluid_ALE_1st_term_LinAll, phi_i_grads_v[j])
-                                    + timestep * theta *
+                                    timestep * theta *            
+                                    convection_fluid_LinAll_short * phi_i_v[j] -                
+                                    convection_fluid_u_LinAll_short * phi_i_v[j] +
+                                    convection_fluid_u_old_LinAll_short * phi_i_v[j] +
+                                    timestep * scalar_product(stress_fluid_ALE_1st_term_LinAll, phi_i_grads_v[j]) +
+                                    timestep * theta *
                                     scalar_product(stress_fluid_ALE_2nd_term_LinAll, phi_i_grads_v[j])           
+
                                     ) * fe_values.JxW(q);
             }             
             else if (comp_j == 2 || comp_j == 3)
             {
-              local_matrix(j,i) += (-alpha_u/(J*J) * J_LinU * scalar_product(grad_u, phi_i_grads_u[j]) 
-                                    + alpha_u/J * scalar_product(phi_i_grads_u[i], phi_i_grads_u[j])
-                                        ) * fe_values.JxW(q);
+              local_matrix(j,i) += (//-alpha_u/(J*J) * J_LinU * (scalar_product(grad_w, phi_i_grads_u[j]) /*+ 1000.0 * v * grad_u * phi_i_u[j]*/)
+                                    + alpha_u/*J*/ * (scalar_product(phi_i_grads_w[i], phi_i_grads_u[j]) /*+ 1000.0 * (phi_i_v[i] * grad_u + v * phi_i_grads_v[j]) * phi_i_u[j]*/)
+                                    ) * fe_values.JxW(q);
             }
             else if (comp_j == 4)
             {
               local_matrix(j,i) += (incompressibility_ALE_LinAll *  phi_i_p[j] 
                                     ) * fe_values.JxW(q);   
             }
-            else if (comp_j == 5)
+            else if (comp_j == 5 || comp_j == 6)
+            {
+              local_matrix(j,i) += (//-alpha_wf/(J*J) * J_LinU * (w * phi_i_w[j] - scalar_product(grad_u,phi_i_grads_w[j])) 
+                                  + alpha_wf/*J*/ * (phi_i_w[i] * phi_i_w[j] - scalar_product(phi_i_grads_u[i],phi_i_grads_w[j])) 
+                                  ) * fe_values.JxW(q);
+            }
+            else if (comp_j == 7)
             {
               local_matrix(j,i) += ( compute_short_scale * accelaration_term_conc_LinAll * phi_i_c[j]
-                                      + timestep * theta * diffusion_term_conc_LinAll * phi_i_grads_c[j]
-                                      + timestep * theta * convection_fluid_c_LinAll_short * phi_i_c[j]
-                                      - convection_fluid_c_u_LinAll_short * phi_i_c[j]      //*timestep * 1./timestep
-                                      + convection_fluid_c_u_old_LinAll_short * phi_i_c[j]  //*timestep * 1./timestep
+                                    + timestep * theta * 
+                                    (
+                                    ( a + b + c + d ) * phi_i_c[j]
+                                    - ( e + f + g + h ) * phi_i_grads_c[j]
+                                    - ( l + m + n + o ) * phi_i_c[j]
+                                    )
+                                    //+ phi_i_c[i] *  phi_i_c[j] 
                                     ) * fe_values.JxW(q); 
             }
             // end j dofs  
@@ -1692,6 +1614,8 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
           phi_i_p[k]       = fe_values[pressure].value (k, q);                   
           phi_i_u[k]       = fe_values[displacements].value (k, q);
           phi_i_grads_u[k] = fe_values[displacements].gradient (k, q);
+          phi_i_w[k]       = fe_values[displacements_w].value (k, q);
+          phi_i_grads_w[k] = fe_values[displacements_w].gradient (k, q);
           phi_i_c[k]       = fe_values[concentration].value (k, q);
           phi_i_grads_c[k] = fe_values[concentration].gradient (k, q);
         }
@@ -1756,8 +1680,8 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
         
           // STVK
           // Piola-kirchhoff stress structure STVK linearized in all directions       
-          // Tensor<2,dim> piola_kirchhoff_stress_structure_STVK_LinALL;
-          // piola_kirchhoff_stress_structure_STVK_LinALL =  lame_coefficient_lambda * 1.0/(g_growth) * F_LinU * tr_E * Identity 
+          //Tensor<2,dim> piola_kirchhoff_stress_structure_STVK_LinALL;
+          //piola_kirchhoff_stress_structure_STVK_LinALL =  lame_coefficient_lambda * 1.0/(g_growth) * F_LinU * tr_E * Identity 
           //                                              + lame_coefficient_lambda * 1.0/(g_growth) * F * tr_E_LinU * Identity
           //                                              + 2 * lame_coefficient_mu * 1.0/(g_growth) *  (F_LinU * E + F * E_LinU);
            
@@ -1782,14 +1706,25 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
             {
               local_matrix(j,i) += (phi_i_p[i] * phi_i_p[j]) * fe_values.JxW(q);      
             }
-            else if (comp_j == 5)
+            else if (comp_j == 5 || comp_j == 6)
+            {
+              //local_matrix(j,i) += (/*1.0/(std::pow(fe_values.JxW(q),2.0)) */ alpha_ws * (phi_i_w[i] * phi_i_w[j] - scalar_product(phi_i_grads_u[i],phi_i_grads_w[j]) ) 
+              //      ) * fe_values.JxW(q);
+
+
+              local_matrix(j,i) += (/*1.0/(std::pow(fe_values.JxW(q),2.0)) */ alpha_ws * (/*phi_i_w[i] * phi_i_w[j] -*/ scalar_product(phi_i_grads_w[i],phi_i_grads_w[j]) ) 
+                                    ) * fe_values.JxW(q);
+            } 
+            else if (comp_j == 7)
             {
 
               local_matrix(j,i) += (compute_short_scale * phi_i_c[i] * phi_i_c[j]
-                                    + timestep * theta * (phi_i_v[i] * grad_co + v * phi_i_grads_c[i] ) * phi_i_c[j]
-                                    + timestep * ( Ds * phi_i_grads_c[i] ) * phi_i_grads_c[j] 
-                                    + timestep * ( (k*phi_i_c[i]* (K+co) - k* co * phi_i_c[i])/(std::pow((K+co),2.0) ) ) * phi_i_c[j] 
-                                    //phi_i_c[i] *  phi_i_c[j] 
+                                    + timestep * theta * (
+                                    + (phi_i_v[i] * grad_co + v * phi_i_grads_c[i] ) * phi_i_c[j]
+                                    - ( Ds * phi_i_grads_c[i] ) * phi_i_grads_c[j] 
+                                    + ( (k*phi_i_c[i]* (K+co) - k* co * phi_i_c[i])/(std::pow((K+co),2.0) ) ) * phi_i_c[j] 
+                                    )
+                //phi_i_c[i] *  phi_i_c[j] 
               ) * fe_values.JxW(q); 
             }
           } // end j dofs
@@ -1843,16 +1778,17 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
   const FEValuesExtractors::Vector velocities (0);
   const FEValuesExtractors::Vector displacements (dim); 
   const FEValuesExtractors::Scalar pressure (dim+dim); 
-  const FEValuesExtractors::Scalar concentration (dim+dim+1);
+  const FEValuesExtractors::Vector displacements_w (dim+dim+1); 
+  const FEValuesExtractors::Scalar concentration (dim+dim+dim+1);
  
-  std::vector<Vector<double> > old_solution_values (n_q_points, Vector<double>(number_coefficients));
-  std::vector<std::vector<Tensor<1,dim> > > old_solution_grads (n_q_points, std::vector<Tensor<1,dim> > (number_coefficients));
-  std::vector<Vector<double> > old_solution_face_values (n_face_q_points, Vector<double>(number_coefficients));
-  std::vector<std::vector<Tensor<1,dim> > > old_solution_face_grads (n_face_q_points, std::vector<Tensor<1,dim> > (number_coefficients));
-  std::vector<Vector<double> > old_timestep_solution_values (n_q_points, Vector<double>(number_coefficients));
-  std::vector<std::vector<Tensor<1,dim> > > old_timestep_solution_grads (n_q_points, std::vector<Tensor<1,dim> > (number_coefficients));
-  std::vector<Vector<double> > old_timestep_solution_face_values (n_face_q_points, Vector<double>(number_coefficients));    
-  std::vector<std::vector<Tensor<1,dim> > > old_timestep_solution_face_grads (n_face_q_points, std::vector<Tensor<1,dim> > (number_coefficients));
+  std::vector<Vector<double> > old_solution_values (n_q_points, Vector<double>(dim+dim+dim+1+1));
+  std::vector<std::vector<Tensor<1,dim> > > old_solution_grads (n_q_points, std::vector<Tensor<1,dim> > (dim+dim+dim+1+1));
+  std::vector<Vector<double> > old_solution_face_values (n_face_q_points, Vector<double>(dim+dim+dim+1+1));
+  std::vector<std::vector<Tensor<1,dim> > > old_solution_face_grads (n_face_q_points, std::vector<Tensor<1,dim> > (dim+dim+dim+1+1));
+  std::vector<Vector<double> > old_timestep_solution_values (n_q_points, Vector<double>(dim+dim+dim+1+1));
+  std::vector<std::vector<Tensor<1,dim> > > old_timestep_solution_grads (n_q_points, std::vector<Tensor<1,dim> > (dim+dim+dim+1+1));
+  std::vector<Vector<double> > old_timestep_solution_face_values (n_face_q_points, Vector<double>(dim+dim+dim+1+1));    
+  std::vector<std::vector<Tensor<1,dim> > > old_timestep_solution_face_grads (n_face_q_points, std::vector<Tensor<1,dim> > (dim+dim+dim+1+1));
    
   typename DoFHandler<dim>::active_cell_iterator
         cell = dof_handler.begin_active(),
@@ -1887,6 +1823,8 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
         const Tensor<1,dim> grad_co = ALE_Transformations ::get_grad_co<dim> (q, old_solution_grads);
         const Tensor<2,dim> grad_v_T = ALE_Transformations::get_grad_v_T<dim> (grad_v);
         const Tensor<1,dim> u = ALE_Transformations::get_u<dim> (q, old_solution_values); 
+        const Tensor<1,dim> w = ALE_Transformations::get_w<dim> (q, old_solution_values); 
+        const Tensor<2,dim> grad_w = ALE_Transformations ::get_grad_w<dim> (q, old_solution_grads);
         const Tensor<2,dim> F = ALE_Transformations::get_F<dim> (q, old_solution_grads);              
         const Tensor<2,dim> F_Inverse = ALE_Transformations::get_F_Inverse<dim> (F);
         const Tensor<2,dim> F_Inverse_T = ALE_Transformations::get_F_Inverse_T<dim> (F_Inverse);
@@ -1953,24 +1891,6 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
         Tensor<1,dim> old_timestep_convection_fluid;
         old_timestep_convection_fluid.clear();
         old_timestep_convection_fluid = (density_fluid * old_timestep_J * (old_timestep_grad_v * old_timestep_F_Inverse * old_timestep_v));
-
-        /******
-         *Concentration
-         ******/
-        // The second convection term for the concentration in the fluid in the ALE formulation        
-        /*double convection_c_fluid_with_u;
-        //convection_c_fluid_with_u.clear();
-        convection_c_fluid_with_u = J * (grad_v * F_Inverse * co);
-        
-        // The third convection term for the concentration in the fluid in the ALE formulation       
-        double convection_c_fluid_with_old_timestep_u;
-        //convection_c_fluid_with_old_timestep_u.clear();
-        convection_c_fluid_with_old_timestep_u = J * (grad_v * F_Inverse * old_timestep_co);
-
-        // The convection term of the previous time step
-        double old_timestep_convection_c_fluid;
-        //old_timestep_convection_c_fluid.clear();
-        old_timestep_convection_c_fluid = ( old_timestep_J * (old_timestep_grad_v * old_timestep_F_Inverse * old_timestep_co));*/
       
         for (unsigned int i=0; i<dofs_per_cell; ++i)
         {
@@ -1999,28 +1919,36 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
             //const Tensor<1,dim> phi_i_u = fe_values[displacements].value (i, q);
             const Tensor<2,dim> phi_i_grads_u = fe_values[displacements].gradient (i, q);
 
-            local_rhs(i) -= ( alpha_u/J * scalar_product(grad_u, phi_i_grads_u)
-                              ) * fe_values.JxW(q);
+            local_rhs(i) -= alpha_u/*J*/ * (scalar_product(grad_w, phi_i_grads_u)
+                           // Transport
+                           //+ 1000.0 * v * grad_u * phi_i_u
+                           ) * fe_values.JxW(q);
           }  
           else if (comp_i == 4)
           {
             const double phi_i_p = fe_values[pressure].value (i, q);
             local_rhs(i) -= (incompressiblity_fluid * phi_i_p) *  fe_values.JxW(q);
-          } 
-          else if (comp_i == 5)
+          }
+          else if (comp_i == 5 || comp_i == 6)
+          { 
+            const Tensor<1,dim> phi_i_w = fe_values[displacements_w].value (i, q);
+            const Tensor<2,dim> phi_i_grads_w = fe_values[displacements_w].gradient (i, q);
+          
+            local_rhs(i) -= alpha_wf/*J*/ * (w * phi_i_w - scalar_product(grad_u,phi_i_grads_w)) *
+                            fe_values.JxW(q);
+          }  
+          else if (comp_i == 7)
           {
             const double phi_i_c = fe_values[concentration].value (i, q);
             const Tensor<1,dim> phi_i_grads_c = fe_values[concentration].gradient (i, q);
-            /*local_rhs(i) -= ( compute_short_scale * (J + old_timestep_J)/2.0 * (co - old_timestep_co) * phi_i_c
-                + timestep * theta * J * (grad_v * F_Inverse * co) * phi_i_c
-                //+ timestep * theta *  J * F_Inverse * Df * grad_co * phi_i_grads_c 
-                //- (convection_c_fluid_with_u - convection_c_fluid_with_old_timestep_u) * phi_i_c*/
             local_rhs(i) -= ( compute_short_scale * (J + old_timestep_J)/2.0 * 
-                              (co - old_timestep_co) * phi_i_c
-                              + timestep * theta * J * Df * grad_co * F_Inverse * F_Inverse_T * phi_i_grads_c
-                              + timestep * theta * J * grad_co * F_Inverse * v * phi_i_c
-                              + theta * J * grad_co * F_Inverse * ( u - old_timestep_u ) * phi_i_c 
-                            ) * fe_values.JxW(q);
+                (co - old_timestep_co) * phi_i_c
+                + timestep * theta * (
+                v * F_Inverse * grad_co * J * phi_i_c
+                + J * F_Inverse * Df * grad_co * phi_i_grads_c
+                + 1./timestep * ( u - old_timestep_u ) * F_Inverse* grad_co * J * phi_i_c )
+              ) * fe_values.JxW(q);
+            //local_rhs(i) -= (co * phi_i_c) *  fe_values.JxW(q);
           }
         } // end i dofs   
       } // close n_q_points  
@@ -2047,7 +1975,6 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
             //const Tensor<1,dim> v = ALE_Transformations::get_v<dim> (q, old_solution_face_values);
             const Tensor<2,dim> grad_v = ALE_Transformations::get_grad_v<dim> (q, old_solution_face_grads);
             const Tensor<2,dim> grad_v_T = ALE_Transformations::get_grad_v_T<dim> (grad_v);
-            const Tensor<1,dim> grad_co = ALE_Transformations::get_grad_co<dim> (q, old_solution_grads); 
             const Tensor<2,dim> F = ALE_Transformations::get_F<dim> (q, old_solution_face_grads);
             const Tensor<2,dim> F_Inverse = ALE_Transformations::get_F_Inverse<dim> (F);
             const Tensor<2,dim> F_Inverse_T = ALE_Transformations::get_F_Inverse_T<dim> (F_Inverse);
@@ -2092,15 +2019,8 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
                                  timestep * (1.0-theta) *
                                  old_timestep_neumann_value * 
                                  fe_face_values[velocities].value (i, q)
-                                 ) * fe_face_values.JxW(q);
+                                 ) * fe_face_values.JxW(q);            
               }
-              //else if (comp_i == 7)
-              //{
-              //  local_rhs(i) += ( timestep * theta *
-              //                    Df * grad_co * fe_face_values.normal_vector(q) * fe_face_values[concentration].value (i, q) 
-              //                   // + timestep * (1-theta)
-              //                  )* fe_face_values.JxW(q);
-              //}
             } // end i  
           } // end face_n_q_points                 
         } 
@@ -2168,11 +2088,6 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
 
             const Tensor<1,dim> neumann_value_stress = (stress_fluid_transposed_part * fe_face_values.normal_vector(q));         
             const Tensor<1,dim> neumann_value = (pI_inflow * fe_face_values.normal_vector(q));
-
-            //Concentration
-            const double co = ALE_Transformations::get_co<dim> (q, old_solution_values);
-            const Tensor<1,dim> v = ALE_Transformations::get_v<dim> (q, old_solution_values);
-            const Tensor<1,dim> grad_co = ALE_Transformations::get_grad_co<dim> (q, old_solution_grads); 
             //const Tensor<1,dim> old_timestep_neumann_value = (old_timestep_stress_fluid_transposed_part * fe_face_values.normal_vector(q));
                    
             for (unsigned int i=0; i<dofs_per_cell; ++i)
@@ -2187,12 +2102,7 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
                                 //old_timestep_neumann_value * 
                                 //fe_face_values[velocities].value (i, q)
                                 ) * fe_face_values.JxW(q);            
-              }
-              //else if (comp_i == 7)
-              //{
-              //  local_rhs(i) += -1*co*v*fe_face_values.normal_vector(q) * fe_face_values[concentration].value (i, q)
-              //                  + Ds * grad_co * fe_face_values.normal_vector(q) * fe_face_values[concentration].value (i, q); //TODO gradient
-              //}
+              }     
             } // end i
           } // end face_n_q_points                                      
         } 
@@ -2234,6 +2144,8 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
         //const Tensor<2,dim> grad_v_T = ALE_Transformations::get_grad_v_T<dim> (grad_v);
         const Tensor<1,dim> u = ALE_Transformations::get_u<dim> (q, old_solution_values); 
         //const Tensor<2,dim> grad_u = ALE_Transformations ::get_grad_u<dim> (q, old_solution_grads);
+        //const Tensor<1,dim> w = ALE_Transformations::get_w<dim> (q, old_solution_values); 
+        const Tensor<2,dim> grad_w = ALE_Transformations ::get_grad_w<dim> (q, old_solution_grads);
         const Tensor<2,dim> F = ALE_Transformations::get_F<dim> (q, old_solution_grads);
         const Tensor<2,dim> F_T = ALE_Transformations::get_F_T<dim> (F);
         const Tensor<2,dim> Identity = ALE_Transformations::get_Identity<dim> ();
@@ -2250,6 +2162,7 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
         //const Tensor<2,dim> old_timestep_grad_v_T = ALE_Transformations::get_grad_v_T<dim> (old_timestep_grad_v);
         const Tensor<1,dim> old_timestep_u = ALE_Transformations::get_u<dim> (q, old_timestep_solution_values);
         double old_timestep_co = ALE_Transformations::get_co<dim> (q, old_timestep_solution_values);
+        //const Tensor<1,dim> old_timestep_w = ALE_Transformations::get_w<dim> (q, old_timestep_solution_values);
         const Tensor<2,dim> old_timestep_F = ALE_Transformations::get_F<dim> (q, old_timestep_solution_grads);
         const Tensor<2,dim> old_timestep_F_Inverse = ALE_Transformations::get_F_Inverse<dim> (old_timestep_F);
         const Tensor<2,dim> old_timestep_F_T = ALE_Transformations::get_F_T<dim> (old_timestep_F);
@@ -2315,15 +2228,26 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
             const double phi_i_p = fe_values[pressure].value (i, q);
             local_rhs(i) -= (old_solution_values[q](dim+dim) * phi_i_p) * fe_values.JxW(q);   
           }
-          else if (comp_i == 5)
+          else if (comp_i == 5 || comp_i == 6)
+          { 
+            //const Tensor<1,dim> phi_i_w = fe_values[displacements_w].value (i, q);
+            const Tensor<2,dim> phi_i_grads_w = fe_values[displacements_w].gradient (i, q);
+            
+            //local_rhs(i) -= /*1.0/(std::pow(fe_values.JxW(q),2.0)) */ alpha_ws * (w * phi_i_w - scalar_product(grad_u,phi_i_grads_w)) *
+            //  fe_values.JxW(q);
+
+            local_rhs(i) -= /*1.0/(std::pow(fe_values.JxW(q),2.0)) */ alpha_ws * (/*w * phi_i_w -*/ scalar_product(grad_w,phi_i_grads_w)) *
+            fe_values.JxW(q);
+          }
+          else if (comp_i == 7)
           {
             const double phi_i_c = fe_values[concentration].value (i, q);
             const Tensor<1,dim> phi_i_grads_c = fe_values[concentration].gradient (i, q);
           
             local_rhs(i) -= ( compute_short_scale * (co - old_timestep_co) * phi_i_c
                             + timestep * theta * (
-                            v * grad_co * phi_i_c 
-                            + Ds * grad_co * phi_i_grads_c 
+                            v * grad_co * phi_i_c + 
+                            Ds * grad_co * phi_i_grads_c 
                             + (k * co)/(K + co) * phi_i_c
                             )
                             //+ timestep * (1-theta) TODO
@@ -2366,11 +2290,15 @@ void
 FSI_ALE_Problem<dim>::set_initial_bc (const double time)
 { 
   std::map<unsigned int,double> boundary_values;  
-  std::vector<bool> component_mask (number_coefficients, true);
+  std::vector<bool> component_mask (dim+dim+dim+1+1, true);
   // (Scalar) pressure
   component_mask[dim+dim] = false;  
+ 
+  // Additional displacement w:
+  component_mask[dim+dim+1]   = false;  
+  component_mask[dim+dim+dim] = false; 
 
-  component_mask[dim+dim+1] = true;   //false; 
+  component_mask[dim+dim+dim+1] = false;//true;    
 
   // Because of Pressure inflow
   component_mask[0] = true;
@@ -2384,36 +2312,36 @@ FSI_ALE_Problem<dim>::set_initial_bc (const double time)
 
   component_mask[0] = true;
   component_mask[1] = true;
-  component_mask[dim+dim+1] = true;       
+  //component_mask[dim+dim+dim+1] = true;       
     
   VectorTools::interpolate_boundary_values (dof_handler,
                                               2,
-                dealii::Functions::ZeroFunction<dim>(number_coefficients),  
+                dealii::Functions::ZeroFunction<dim>(dim+dim+dim+1+1),  
                                               boundary_values,
                                               component_mask);
 
   VectorTools::interpolate_boundary_values (dof_handler,
                                               3,
-                dealii::Functions::ZeroFunction<dim>(number_coefficients),  
+                dealii::Functions::ZeroFunction<dim>(dim+dim+dim+1+1),  
                                               boundary_values,
                                               component_mask);
  
   VectorTools::interpolate_boundary_values (dof_handler,
                 80,
-                dealii::Functions::ZeroFunction<dim>(number_coefficients),  
+                dealii::Functions::ZeroFunction<dim>(dim+dim+dim+1+1),  
                 boundary_values,
                 component_mask);
     
   VectorTools::interpolate_boundary_values (dof_handler,
                 82,
-                dealii::Functions::ZeroFunction<dim>(number_coefficients),  
+                dealii::Functions::ZeroFunction<dim>(dim+dim+dim+1+1),  
                 boundary_values,
                 component_mask);
    
     
   component_mask[0] = false;
   component_mask[1] = false;   
-  component_mask[dim+dim+1] = false;    
+  //component_mask[dim+dim+dim+1] = false;    
     VectorTools::interpolate_boundary_values (dof_handler,
                 2,
                 BoundaryParabel<dim>(time, u_y,
@@ -2423,7 +2351,7 @@ FSI_ALE_Problem<dim>::set_initial_bc (const double time)
     
   VectorTools::interpolate_boundary_values (dof_handler,
                 1,
-                dealii::Functions::ZeroFunction<dim>(number_coefficients),  
+                dealii::Functions::ZeroFunction<dim>(dim+dim+dim+1+1),  
                 boundary_values,
                 component_mask);
     
@@ -2443,61 +2371,65 @@ template <int dim>
 void
 FSI_ALE_Problem<dim>::set_newton_bc ()
 {
-  std::vector<bool> component_mask (number_coefficients, true);
-  component_mask[dim+dim] = false; 
+  std::vector<bool> component_mask (dim+dim+dim+1+1, true);
+  component_mask[dim+dim] = false; // p 
 
-  component_mask[dim+dim+1] = true; //false; 
+  // Additional displacement w:
+  component_mask[dim+dim+1]   = false; 
+  component_mask[dim+dim+dim] = false; 
+
+  component_mask[dim+dim+dim+1] = false;//true; 
 
   // Because of Pressure inflow
   component_mask[0] = true;
   component_mask[1] = true;      
   VectorTools::interpolate_boundary_values (dof_handler,
                 0,
-                dealii::Functions::ZeroFunction<dim>(number_coefficients),                                             
+                dealii::Functions::ZeroFunction<dim>(dim+dim+dim+1+1),                                             
                 constraints,
                 component_mask); 
    
   component_mask[0] = true;
   component_mask[1] = true;  
-  component_mask[dim+dim+1] = true;     
+  //component_mask[dim+dim+dim+1] = true;     
 
   VectorTools::interpolate_boundary_values (dof_handler,
                                               2,
-                dealii::Functions::ZeroFunction<dim>(number_coefficients),  
+                dealii::Functions::ZeroFunction<dim>(dim+dim+dim+1+1),  
                                               constraints,
                                               component_mask);
 
   VectorTools::interpolate_boundary_values (dof_handler,
                                               7,
-                dealii::Functions::ZeroFunction<dim>(number_coefficients),  
+                dealii::Functions::ZeroFunction<dim>(dim+dim+dim+1+1),  
                                               constraints,
                                               component_mask);
 
 
   VectorTools::interpolate_boundary_values (dof_handler,
                                               3,
-                dealii::Functions::ZeroFunction<dim>(number_coefficients),  
+                dealii::Functions::ZeroFunction<dim>(dim+dim+dim+1+1),  
                                               constraints,
                                               component_mask);
 
   VectorTools::interpolate_boundary_values (dof_handler,
                                               80,
-                dealii::Functions::ZeroFunction<dim>(number_coefficients),  
+                dealii::Functions::ZeroFunction<dim>(dim+dim+dim+1+1),  
                                               constraints,
                                               component_mask);
   VectorTools::interpolate_boundary_values (dof_handler,
                 82,
-                dealii::Functions::ZeroFunction<dim>(number_coefficients),  
+                dealii::Functions::ZeroFunction<dim>(dim+dim+dim+1+1),  
                 constraints,
                 component_mask);   
 
   component_mask[0] = false;
   component_mask[1] = false;
-  component_mask[dim+dim+1] = false;    
+  //component_mask[dim+dim+dim+1] = false;    
     
   VectorTools::interpolate_boundary_values (dof_handler,
                 1,
-                dealii::Functions::ZeroFunction<dim>(number_coefficients),  
+                dealii::Functions::ZeroFunction<dim>(dim+dim+dim+1+1),  
                 constraints,
                 component_mask);
 }  
@@ -2550,7 +2482,7 @@ void FSI_ALE_Problem<dim>::newton_iteration (const double time)
   // Case 1: 1.0e-1
   // Case 2: 1.0e-6
   // Case 3: 1.0e-6
-  const double lower_bound_newton_residuum = 1.0e-8;
+  const double lower_bound_newton_residuum = 1.0e-1;
 
   // TODO
   const unsigned int max_no_newton_steps  = 10;
@@ -2572,7 +2504,6 @@ void FSI_ALE_Problem<dim>::newton_iteration (const double time)
 
   double newton_residuum = system_rhs.linfty_norm(); 
   double old_newton_residuum= newton_residuum;
-  double initial_newton_residuum = newton_residuum;
   unsigned int newton_step = 1;
    
   if (newton_residuum < lower_bound_newton_residuum)
@@ -2580,9 +2511,8 @@ void FSI_ALE_Problem<dim>::newton_iteration (const double time)
     std::cout << '\t' << std::scientific << newton_residuum << std::endl;     
   }
   
-  while ((newton_residuum > lower_bound_newton_residuum &&
-    (newton_residuum/initial_newton_residuum) > lower_bound_newton_residuum) &&
-   newton_step < max_no_newton_steps )
+  while (newton_residuum > lower_bound_newton_residuum &&
+        newton_step < max_no_newton_steps)
   {
     timer_newton.start();
     old_newton_residuum = newton_residuum;
@@ -2651,6 +2581,8 @@ FSI_ALE_Problem<dim>::output_results (const unsigned int refinement_cycle,
 //  solution_names.push_back ("displacement");
 //  solution_names.push_back ("displacement");
 //  solution_names.push_back ("p_fluid");
+//  solution_names.push_back ("displace_w");
+//  solution_names.push_back ("displace_w");
 //   
 //  std::vector<DataComponentInterpretation::DataComponentInterpretation>
 //    data_component_interpretation
@@ -2671,11 +2603,13 @@ FSI_ALE_Problem<dim>::output_results (const unsigned int refinement_cycle,
   solution_names.push_back ("x_dis");
   solution_names.push_back ("y_dis");
   solution_names.push_back ("p_fluid");
+  solution_names.push_back ("wx_dis");
+  solution_names.push_back ("wy_dis");
   solution_names.push_back ("conc");
    
   std::vector<DataComponentInterpretation::DataComponentInterpretation>
     data_component_interpretation
-    (dim+dim+1+1, DataComponentInterpretation::component_is_scalar);
+    (dim+dim+1+1+dim, DataComponentInterpretation::component_is_scalar);
 
 
   
@@ -2719,7 +2653,7 @@ void FSI_ALE_Problem<dim>::compute_minimal_J()
   
   
   std::vector<std::vector<Tensor<1,dim> > > old_solution_grads (n_q_points, 
-                std::vector<Tensor<1,dim> > (number_coefficients));
+                std::vector<Tensor<1,dim> > (dim+dim+dim+1+1));
   
   double min_J= 1.0e+5;
   double J=1.0e+5;
@@ -2765,7 +2699,7 @@ double FSI_ALE_Problem<dim>::compute_point_value (Point<dim> p,
                  const unsigned int component) const  
 {
  
-  Vector<double> tmp_vector(number_coefficients);
+  Vector<double> tmp_vector(dim+dim+dim+1+1);
   VectorTools::point_value (dof_handler, 
           solution, 
           p, 
@@ -2788,10 +2722,10 @@ void FSI_ALE_Problem<dim>::compute_drag_lift_fsi_fluid_tensor()
 
   std::vector<unsigned int> local_dof_indices (dofs_per_cell);
   std::vector<Vector<double> >  face_solution_values (n_face_q_points, 
-                  Vector<double> (number_coefficients));
+                  Vector<double> (dim+dim+dim+1+1));
 
   std::vector<std::vector<Tensor<1,dim> > > 
-    face_solution_grads (n_face_q_points, std::vector<Tensor<1,dim> > (number_coefficients));
+    face_solution_grads (n_face_q_points, std::vector<Tensor<1,dim> > (dim+dim+dim+1+1));
   
   Tensor<1,dim> drag_lift_value;
   
@@ -2889,10 +2823,10 @@ void FSI_ALE_Problem<dim>::compute_outflow()
 
   std::vector<unsigned int> local_dof_indices (dofs_per_cell);
   std::vector<Vector<double> >  face_solution_values (n_face_q_points, 
-                  Vector<double> (number_coefficients));
+                  Vector<double> (dim+dim+dim+1+1));
 
   std::vector<std::vector<Tensor<1,dim> > > 
-    face_solution_grads (n_face_q_points, std::vector<Tensor<1,dim> > (number_coefficients));
+    face_solution_grads (n_face_q_points, std::vector<Tensor<1,dim> > (dim+dim+dim+1+1));
   
   double drag_lift_value = 0.0;
   
@@ -3008,10 +2942,10 @@ void FSI_ALE_Problem<dim>::compute_vorticity()
   
  
   //  std::vector<Vector<double> > 
-  //    old_solution_values (n_q_points, Vector<double>(dim+dim+1));
+  //    old_solution_values (n_q_points, Vector<double>(dim+dim+dim+1));
 
   std::vector<std::vector<Tensor<1,dim> > > old_solution_grads (n_q_points, 
-                std::vector<Tensor<1,dim> > (number_coefficients));
+                std::vector<Tensor<1,dim> > (dim+dim+dim+1+1));
   
   double vorticity = 0.0;
 
@@ -3083,7 +3017,9 @@ void FSI_ALE_Problem<dim>::run ()
       << "Density structure: "   <<  density_structure << "\n"  
       << "Viscosity fluid:   "   <<  viscosity << "\n"
       << "alpha_u:           "   <<  alpha_u << "\n"
-      << "alpha_us:          "   <<  alpha_us << "\n"  
+      << "alpha_us:          "   <<  alpha_us << "\n"
+      << "alpha_wf:          "   <<  alpha_wf << "\n"    
+      << "alpha_ws:          "   <<  alpha_ws << "\n"    
       << "Lame coeff. mu:    "   <<  lame_coefficient_mu << "\n"
       << std::endl;
 
@@ -3119,11 +3055,11 @@ void FSI_ALE_Problem<dim>::run ()
     }*/
     compute_short_scale = 1.0;
 
-    max_no_timesteps = 251; //250;
+    max_no_timesteps = 251; //251; //250;
     if (timestep_number < 1)
       timestep = 1.0;
     else 
-      timestep = 1.0;//86400.0;
+      timestep = 86400.0;
 
     //compute_short_scale = 0.0;
     alpha_growth = alpha_growth + gamma_zero * timestep * 1.0/(1.0 + drag/50.0);
