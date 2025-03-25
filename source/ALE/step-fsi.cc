@@ -107,7 +107,7 @@ Die Kopplung ist dann folgendermaßen:
 #include <deal.II/dofs/dof_accessor.h>
 #include <deal.II/dofs/dof_tools.h>
 //#include <dofs/dof_constraints.h>
-//#include <deal.II/lac/constraint_matrix.h> // old deal.II version
+//#include <deal.II/lac/constraint_matrix.h> // old deal.II versioncell_qp
 #include <deal.II/lac/affine_constraints.h>
 
 #include <deal.II/fe/fe_q.h>
@@ -134,8 +134,6 @@ Die Kopplung ist dann folgendermaßen:
 // all deal.II names into the global
 // namespace:       
 using namespace dealii;
-
-
 
 // First, we define tensors for the solution variables
 // v (velocity), u (displacement), p (pressure),
@@ -633,7 +631,6 @@ namespace NSE_in_ALE
     Tensor<1,dim> convection_LinV;
     convection_LinV = (J * phi_i_grads_v * F_Inverse * old_timestep_solution_displacement); 
     
-    
     return density * (convection_LinU  + convection_LinV);
   }
 
@@ -660,29 +657,20 @@ namespace NSE_in_ALE
     
     double convection_c_LinU = 0;
     double convection_c_LinV = 0;
-
-
-    //double convection_c_LinU = (J_LinU * grad_co * F_Inverse * v +
-    //                            J * grad_co_T * F_Inverse_LinU * v);
-    //double convection_c_LinV = (J * (phi_i_grads_c_T * F_Inverse * v + 
-    //                            grad_co * F_Inverse * phi_i_v));
+    double convection_c_LinC = 0;
 
     for( int i=0; i<dim; i++ )
     {
       for( int j=0; j<dim; j++ )
       {
-        convection_c_LinU += J_LinU * grad_co[i] * F_Inverse[j][i] * v[j]
-                            + J * grad_co[i] * F_Inverse_LinU[j][i] * v[j];
-        convection_c_LinV += J * phi_i_grads_c[i] * F_Inverse[j][i] * v[j]
-                            + J * grad_co[i] * F_Inverse[j][i] * phi_i_v[j];
+        convection_c_LinU += J_LinU * grad_co[i] * F_Inverse[i][j] * v[j]
+                            + J * grad_co[i] * F_Inverse_LinU[i][j] * v[j];
+        convection_c_LinC += J * phi_i_grads_c[i] * F_Inverse[i][j] * v[j];
+        convection_c_LinV += J * grad_co[i] * F_Inverse[i][j] * phi_i_v[j];
       }
     }
-    //double convection_c_LinU = J_LinU * F_Inverse * v * grad_co
-    //                            + J * F_Inverse_LinU * v * grad_co ;
-    //double convection_c_LinV = J * F_Inverse * v * phi_i_grads_c
-    //                            + J * F_Inverse * phi_i_v * grad_co;
     
-    return convection_c_LinU + convection_c_LinV;
+    return convection_c_LinU + convection_c_LinC + convection_c_LinV;
   }
 
   template <int dim> 
@@ -704,10 +692,10 @@ namespace NSE_in_ALE
     {
       for( int j=0; j<dim; j++ )
       {
-        convection_c_LinU += J_LinU * grad_co[i] * F_Inverse[j][i] * u[j]
-                            + J * grad_co[i] * F_Inverse_LinU[j][i] * u[j]
-                            + J * grad_co[i] * F_Inverse[j][i] * phi_i_u[j];
-        convection_c_LinC += J * phi_i_grads_c[i] * F_Inverse[j][i] * phi_i_u[j];
+        convection_c_LinU += J_LinU * grad_co[i] * F_Inverse[i][j] * u[j]
+                            + J * grad_co[i] * F_Inverse_LinU[i][j] * u[j]
+                            + J * grad_co[i] * F_Inverse[i][j] * phi_i_u[j];
+        convection_c_LinC += J * phi_i_grads_c[i] * F_Inverse[i][j] * u[j];
       }
     }
 
@@ -748,9 +736,9 @@ namespace NSE_in_ALE
     {
       for( int j=0; j<dim; j++ )
       {
-        convection_c_LinU += J_LinU * grad_co[i] * F_Inverse[j][i] * old_timestep_solution_displacement[j]
-                            + J * grad_co[i] * F_Inverse_LinU[j][i] * old_timestep_solution_displacement[j];
-        convection_c_LinC += J * phi_i_grads_c[i] * F_Inverse[j][i] * old_timestep_solution_displacement[j];
+        convection_c_LinU += J_LinU * grad_co[i] * F_Inverse[i][j] * old_timestep_solution_displacement[j]
+                            + J * grad_co[i] * F_Inverse_LinU[i][j] * old_timestep_solution_displacement[j];
+        convection_c_LinC += J * phi_i_grads_c[i] * F_Inverse[i][j] * old_timestep_solution_displacement[j];
       }
     }
     return convection_c_LinU  + convection_c_LinC;
@@ -850,6 +838,32 @@ namespace Structure_Terms_in_ALE
 }
 
 
+template <int dim>
+class BoundarySolid : public Function<dim> 
+{
+public:
+  BoundarySolid ( )    
+    : Function<dim>(dim+dim+1+1) 
+  {
+
+  }
+    
+  virtual double value (const Point<dim>   &p,
+      const unsigned int  component = 0) const;
+};
+
+template <int dim>
+double
+BoundarySolid<dim>::value (const Point<dim>  &p,
+           const unsigned int component) const
+{
+  Assert (component < this->n_components,
+    ExcIndexRange (component, 0, this->n_components));
+  if( component == 5 )
+    return 1;
+  return 0;
+}
+
 
 // In this class, we define a function
 // that deals with the boundary values.
@@ -916,7 +930,7 @@ BoundaryParabel<dim>::value (const Point<dim>  &p,
   double beta_inflow = 1.0e-1; //0.1;
 
   //changed to have a boundary condition for the concentration
-  if (component == 0 || component == 5)   
+  if (component == 0 )//|| component == 5) 
   {
     if (!_compute_short_scale)
     {
@@ -927,7 +941,7 @@ BoundaryParabel<dim>::value (const Point<dim>  &p,
     {
       double sin_tmp = (1.0 + std::sin(2.0*pi*_time));
 
-      double total_inflow = ( (p(0) == -5) && (p(1) <= 1.0) && (p(1) >= -1.0) ? inflow_velocity * 
+      double total_inflow = ( (p(0) == -5) && (p(1) <= 1.0) && (p(1) >= -1.0) ?  inflow_velocity * 
          sin_tmp * 
          ((beta_inflow + 10.0 * (1.0 -  _u_y)) * (1.0 - p(1)*p(1))) : 0);
 
@@ -936,15 +950,26 @@ BoundaryParabel<dim>::value (const Point<dim>  &p,
       return total_inflow;
     }
   }
-  else if(component == 5)
+  if (component == 5)   
   {
-    double sin_tmp = (1.0 + std::sin(2.0*pi*_time));
+    if (!_compute_short_scale)
+    {
+      return   ( (p(0) == 5) && (p(1) <= 1.0) && (p(1) >= -1.0) ? 10 - inflow_velocity * 
+         ((beta_inflow + 10.0 * (1.0 -  _u_y)) * (1.0 - p(1)*p(1))) : 5);
+    }
+    else if (_compute_short_scale)
+    {
+      double sin_tmp = (1.0 + std::sin(2.0*pi*_time));
 
-    double total_concentration = ( (p(0) == -5) && (p(1) <= 1.0) && (p(1) >= -1.0) ? 10 - ( inflow_velocity * 
-                         sin_tmp * 
-                         ((beta_inflow + 10.0 * (1.0 -  _u_y)) * (1.0 - p(1)*p(1))) ) : 0);
+      double total_inflow = ( (p(0) == 5) && (p(1) <= 1.0) && (p(1) >= -1.0) ? 10 - inflow_velocity * 
+         sin_tmp * 
+         ((beta_inflow + 10.0 * (1.0 -  _u_y)) * (1.0 - p(1)*p(1))) : 5);
 
-      return total_concentration;
+      //std::cout <<  _time << "   " << sin_tmp << "   " << total_inflow << std::endl;
+
+      return total_inflow;
+    }
+  }
   return 0;
 }
 
@@ -1019,11 +1044,13 @@ public:
   
 private:
   
+  //bool is_at_boundary(unsigned int q_cell, const typename DoFHandler<dim>::active_cell_iterator cell, Point<2> cell_qp, FEFaceValues<dim> fe_face_values);
   void set_runtime_parameters ();
   void setup_system ();
   void assemble_system_matrix ();   
   void assemble_system_rhs ();
   
+  void set_initial_condition();
   void set_initial_bc (const double time);
   void set_newton_bc ();
   
@@ -1076,6 +1103,12 @@ private:
 
   //Biofilm concentration
   double k, K;
+
+  //volume expansion bakterium
+  Tensor<1,dim> volume_expansion;
+
+  //adhesion, detachment
+  double ka, kd;
 
   //Diffusion coefficients
   double Df, Ds;
@@ -1152,8 +1185,16 @@ void FSI_ALE_Problem<dim>::set_runtime_parameters ()
   alpha_us = 1.0;
 
   //Biofilm Concentration coefficients
-  k = 3*1e-2; //max Wachstumsgeschwindigkeit
-  K = 3*1e-3; //Halb-Sättigungskonstante - Michaelis-Menten-Konstante 
+  k = 30; //3*1e-2; //max Wachstumsgeschwindigkeit
+  K = 2; //3*1e-3; //Halb-Sättigungskonstante - Michaelis-Menten-Konstante 
+
+  //volume expansion bakterium
+  for( int i=0; i<dim; i++ )
+    volume_expansion[i] = 1e-06;
+
+  //adhesion, detachment
+  ka = 1e-04;
+  kd = 1e-08;
 
   //Diffusion coefficients
   Df = 2.5 * 1e-06;
@@ -1165,7 +1206,7 @@ void FSI_ALE_Problem<dim>::set_runtime_parameters ()
 
   // Timestep size:
   // TODO
-  timestep = 1.0;//43200.0; //86400.0;
+  timestep = 1;//43200.0; //86400.0;
 
   // Maximum number of timesteps:
   // FSI 1: 25 , T= 25   (timestep == 1.0)
@@ -1201,7 +1242,7 @@ void FSI_ALE_Problem<dim>::set_runtime_parameters ()
   // fluid-structure interaction benchmark problems 
   // (Lit. J. Hron, S. Turek, 2006)
   std::string grid_name;
-  grid_name  = "channel_growth_Sep_2013.inp";
+  grid_name  = "channel_biofilm_Mar_2025.inp";
   
   GridIn<dim> grid_in;
   grid_in.attach_triangulation (triangulation);
@@ -1211,6 +1252,33 @@ void FSI_ALE_Problem<dim>::set_runtime_parameters ()
   
   triangulation.refine_global (3);
 }
+
+/*template <int dim> 
+inline 
+bool FSI_ALE_Problem<dim>::is_at_boundary( unsigned int q_cell, const typename DoFHandler<dim>::active_cell_iterator cell, Point<2> cell_qp, FEFaceValues<dim> fe_face_values )
+{
+  fe_values.reinit (cell);
+  Point<2> cell_qp = fe_values.get_quadrature().point(q_cell);
+  for (int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
+  {
+    if (cell->neighbor_index(face) != -1)  
+    {
+      if (cell->material_id() !=  cell->neighbor(face)->material_id())
+      {
+        fe_face_values.reinit (cell->neighbor(face), face);
+        for(int q_face = 0; q_face < fe_face_values.n_quadrature_points; q_face++)
+        {
+          if( (cell_qp - fe_face_values.quadrature_point(q_face)).norm() < 1e-12 )
+          {
+            std::cout << "is on boundary" << std::endl;
+            return true;
+          }
+        }
+      }
+    }
+  }
+  return false;
+}*/
 
 
 // This function is similar to many deal.II tutorial steps.
@@ -1434,6 +1502,9 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
 
   std::vector<Vector<double> >   old_timestep_solution_face_values (n_face_q_points, 
                     Vector<double>(number_coefficients));
+
+    std::vector<Vector<double> >   old_timestep_solution_values_inv (n_face_q_points, 
+                    Vector<double>(number_coefficients));
   
     
   std::vector<std::vector<Tensor<1,dim> > >  old_timestep_solution_face_grads (n_face_q_points, 
@@ -1446,7 +1517,8 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
   std::vector<Tensor<1,dim> > phi_i_u (dofs_per_cell); 
   std::vector<Tensor<2,dim> > phi_i_grads_u(dofs_per_cell);
   std::vector<double>         phi_i_c(dofs_per_cell);   
-  std::vector<Tensor<1,dim> > phi_i_grads_c (dofs_per_cell); 
+  std::vector<Tensor<1,dim> > phi_i_grads_c (dofs_per_cell);   
+  std::vector<double>         phi_i_c_inv(fe.n_dofs_per_face());   
 
   // This is the identity matrix in two dimensions:
   const Tensor<2,dim> Identity = ALE_Transformations
@@ -1455,6 +1527,10 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
   typename DoFHandler<dim>::active_cell_iterator
     cell = dof_handler.begin_active(),
     endc = dof_handler.end();
+
+  bool debug = true;
+
+  double interface_check;
   
   for (; cell!=endc; ++cell)
   { 
@@ -1471,7 +1547,18 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
     // Old_timestep_solution values
     fe_values.get_function_values (old_timestep_solution, old_timestep_solution_values);
     fe_values.get_function_gradients (old_timestep_solution, old_timestep_solution_grads);
-      
+
+    for (unsigned int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
+    {
+      if (cell->neighbor_index(face) != -1)     
+      {
+        if (cell->material_id() !=  cell->neighbor(face)->material_id()) //interface //face ->id face
+        {
+          fe_face_values.reinit (cell->neighbor(face), face);
+          fe_face_values.get_function_values (old_timestep_solution, old_timestep_solution_values_inv);
+        }
+      }
+    }
     // Next, we run over all cells for the fluid equations
     if (cell->material_id() == 0)
     {
@@ -1487,7 +1574,19 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
           phi_i_c[k]       = fe_values[concentration].value (k, q);
           phi_i_grads_c[k] = fe_values[concentration].gradient (k, q);
         }
-            
+
+        int is_on_b = 0;
+        interface_check = fe_values.get_quadrature().point(q)[1];
+
+        if( interface_check - 0.887298 < 1e-06 && interface_check - 0.887298 > -1e-06 )
+        {
+          is_on_b = 1;
+        }
+        else if (  interface_check - 0.112702 < 1e-06 && interface_check - 0.112702 > -1e-06 )
+        {
+          is_on_b = 1;
+        }
+
         // We build values, vectors, and tensors
         // from information of the previous Newton step. These are introduced 
         // for two reasons:
@@ -1506,6 +1605,7 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
         const Tensor<2,dim> F_Inverse = ALE_Transformations::get_F_Inverse<dim> (F);
         const Tensor<2,dim> F_Inverse_T = ALE_Transformations::get_F_Inverse_T<dim> (F_Inverse);
         const double J = ALE_Transformations::get_J<dim> (F);
+        double co_inv = 0;
         
         // Stress tensor for the fluid in ALE notation        
         const Tensor<2,dim> sigma_ALE = NSE_in_ALE::get_stress_fluid_ALE<dim> (density_fluid, viscosity, pI, grad_v, grad_v_T, F_Inverse, F_Inverse_T );
@@ -1514,7 +1614,7 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
         const Tensor<1,dim> old_timestep_v = ALE_Transformations::get_v<dim> (q, old_timestep_solution_values);
         const Tensor<1,dim> old_timestep_u = ALE_Transformations::get_u<dim> (q, old_timestep_solution_values);
         const Tensor<2,dim> old_timestep_F = ALE_Transformations::get_F<dim> (q, old_timestep_solution_grads);
-        double old_timestep_co = ALE_Transformations::get_co<dim> (q, old_timestep_solution_values);
+        const double old_timestep_co = ALE_Transformations::get_co<dim> (q, old_timestep_solution_values);
         const double old_timestep_J = ALE_Transformations::get_J<dim> (old_timestep_F);
         //Ende Loesungskomponenten in Newton aus vorheriger Iteration
 
@@ -1547,7 +1647,7 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
            * Concentration
            **********/
           //Concentration Convection Term Linearized sym((v_f-w)F^-1 * nabla c_f J phi_c)
-          const double convection_fluid_c_LinAll_short = NSE_in_ALE::get_Convection_c_LinAll_short<dim> (phi_i_grads_c[i], phi_i_v[i], J, J_LinU, F_Inverse, F_Inverse_LinU, v, grad_co);
+          const double convection_fluid_c_LinAll_short = NSE_in_ALE::get_Convection_c_LinAll_short<dim> (phi_i_grads_c[i], phi_i_v[i], J, J_LinU, F_Inverse, F_Inverse_LinU, v, grad_co); 
           const double convection_fluid_c_u_LinAll_short =  NSE_in_ALE::get_Convection_c_u_LinAll_short<dim> (phi_i_grads_c[i], phi_i_u[i], J,J_LinU, F_Inverse, F_Inverse_LinU, u, grad_co);
           const double convection_fluid_c_u_old_LinAll_short = NSE_in_ALE::get_Convection_c_u_old_LinAll_short<dim> (phi_i_grads_c[i], J, J_LinU, F_Inverse, F_Inverse_LinU, old_timestep_u, grad_co);
           
@@ -1572,7 +1672,7 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
                                     + convection_fluid_u_old_LinAll_short * phi_i_v[j]
                                     + timestep * scalar_product(stress_fluid_ALE_1st_term_LinAll, phi_i_grads_v[j])
                                     + timestep * theta *
-                                    scalar_product(stress_fluid_ALE_2nd_term_LinAll, phi_i_grads_v[j])           
+                                    scalar_product(stress_fluid_ALE_2nd_term_LinAll, phi_i_grads_v[j])
                                     ) * fe_values.JxW(q);
             }             
             else if (comp_j == 2 || comp_j == 3)
@@ -1593,6 +1693,7 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
                                       + timestep * theta * convection_fluid_c_LinAll_short * phi_i_c[j]
                                       - convection_fluid_c_u_LinAll_short * phi_i_c[j]      //*timestep * 1./timestep
                                       + convection_fluid_c_u_old_LinAll_short * phi_i_c[j]  //*timestep * 1./timestep
+                                      + is_on_b * J * ( ka * phi_i_c[i]) * phi_i_c[j]
                                     ) * fe_values.JxW(q); 
             }
             // end j dofs  
@@ -1600,7 +1701,7 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
           // end i dofs   
         }   
         // end n_q_points
-      }    
+      }
         
       // We compute in the following
       // one term on the outflow boundary. 
@@ -1693,9 +1794,20 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
           phi_i_u[k]       = fe_values[displacements].value (k, q);
           phi_i_grads_u[k] = fe_values[displacements].gradient (k, q);
           phi_i_c[k]       = fe_values[concentration].value (k, q);
+          //phi_i_c[k]       = fe_values[concentration].value (k, q);
           phi_i_grads_c[k] = fe_values[concentration].gradient (k, q);
         }
        
+        int is_on_b = 0;
+        interface_check = fe_values.get_quadrature().point(q)[1];
+        if( interface_check - 0.887298 < 1e-06 && interface_check - 0.887298 > -1e-06 )
+        {
+          is_on_b = 1;
+        }
+        else if (  interface_check - 0.112702 < 1e-06 && interface_check - 0.112702 > -1e-06 )
+        {
+          is_on_b = 1;
+        }
         // Wachstum
         //double g_growth = 1.0 * (1.0 + 0.01 * time);
         double g_growth = 0.0;
@@ -1735,7 +1847,7 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
         //const double old_timestep_J = ALE_Transformations::get_J<dim> (old_timestep_F);
                 
         for (unsigned int i=0; i<dofs_per_cell; ++i)
-        {               
+        {
           //TODO linCo
           //const Tensor<2,dim> pI_LinP = ALE_Transformations::get_pI_LinP<dim> (phi_i_p[i]);
           const double J_LinU = ALE_Transformations::get_J_LinU<dim> (q, old_solution_grads, phi_i_grads_u[i]);
@@ -1774,9 +1886,12 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
             }        
             else if (comp_j == 2 || comp_j == 3)
             {
-              local_matrix(j,i) += (density_structure * alpha_us * 
-                                    (compute_short_scale * phi_i_u[i] * phi_i_u[j] - timestep * theta * phi_i_v[i] * phi_i_u[j])            
-                                    ) *  fe_values.JxW(q);        
+              local_matrix(j,i) +=  (density_structure * alpha_us * 
+                                    (compute_short_scale * phi_i_u[i] * phi_i_u[j] 
+                                     - timestep * theta * phi_i_v[i] * phi_i_u[j]
+                                    )
+                                      - volume_expansion * phi_i_c[i] * phi_i_u[j]        
+                                    ) *  fe_values.JxW(q);
             }
             else if (comp_j == 4)
             {
@@ -1784,16 +1899,28 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
             }
             else if (comp_j == 5)
             {
-
               local_matrix(j,i) += (compute_short_scale * phi_i_c[i] * phi_i_c[j]
-                                    + timestep * theta * (phi_i_v[i] * grad_co + v * phi_i_grads_c[i] ) * phi_i_c[j]
+                                    - timestep * theta * (grad_co * phi_i_v[i] + phi_i_grads_c[i] * v ) * phi_i_c[j]
                                     + timestep * ( Ds * phi_i_grads_c[i] ) * phi_i_grads_c[j] 
-                                    + timestep * ( (k*phi_i_c[i]* (K+co) - k* co * phi_i_c[i])/(std::pow((K+co),2.0) ) ) * phi_i_c[j] 
-                                    //phi_i_c[i] *  phi_i_c[j] 
+                                    - timestep * ( (k*phi_i_c[i]* (K+co) - k* co * phi_i_c[i])/(std::pow((K+co),2.0) ) ) * phi_i_c[j]
+                                    + is_on_b * J * ( kd * phi_i_c[i]) * phi_i_c[j]
               ) * fe_values.JxW(q); 
+              /*if (debug && fe.system_to_component_index(i).first == 5)
+              {
+                //for( int l=0; l<dofs_per_cell; l++ )
+                //  std::cout << l << ": phi_i_c=" << phi_i_c[l] << std::endl;
+                std::cout << "i: " << i << ", j: " << j << std::endl;
+                std::cout << "grad_co:" << grad_co << ", phi_i_c[i]: " << phi_i_c[i] << ", phi_i_c[j]: " << phi_i_c[j] << ", co: " << co << std::endl;
+                std::cout << "partial_t  " << compute_short_scale * phi_i_c[i] * phi_i_c[j] << std::endl;
+                std::cout << "diff   " << timestep * ( Ds * phi_i_grads_c[i] ) * phi_i_grads_c[j]  << std::endl;
+                std::cout << "conv   " <<  - timestep * theta * (grad_co * phi_i_v[i] + phi_i_grads_c[i] * v ) * phi_i_c[j] << std::endl;
+                std::cout << "k   " << timestep * ( (k*phi_i_c[i]* (K+co) - k* co * phi_i_c[i])/(std::pow((K+co),2.0) ) ) * phi_i_c[j]  << std::endl;
+                std::cout << "erg: " << local_matrix(j,i) << std::endl;
+              }*/
             }
           } // end j dofs
         } // end i dofs 
+        debug = false;
       } // end n_q_points 
 
       cell->get_dof_indices (local_dof_indices);
@@ -1801,7 +1928,6 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
                 system_matrix);
     } // end if (second PDE: STVK material)
   } // end cell
-   
   timer.leave_subsection(); 
 }
 
@@ -1853,6 +1979,7 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
   std::vector<std::vector<Tensor<1,dim> > > old_timestep_solution_grads (n_q_points, std::vector<Tensor<1,dim> > (number_coefficients));
   std::vector<Vector<double> > old_timestep_solution_face_values (n_face_q_points, Vector<double>(number_coefficients));    
   std::vector<std::vector<Tensor<1,dim> > > old_timestep_solution_face_grads (n_face_q_points, std::vector<Tensor<1,dim> > (number_coefficients));
+  std::vector<Vector<double> >   old_timestep_solution_values_inv (n_q_points, Vector<double>(number_coefficients));
    
   typename DoFHandler<dim>::active_cell_iterator
         cell = dof_handler.begin_active(),
@@ -1872,13 +1999,56 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
     // old timestep iteration
     fe_values.get_function_values (old_timestep_solution, old_timestep_solution_values);
     fe_values.get_function_gradients (old_timestep_solution, old_timestep_solution_grads);
+
+    for (unsigned int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
+    {
+      if (cell->neighbor_index(face) != -1)     
+      {
+        if (cell->material_id() !=  cell->neighbor(face)->material_id()) //interface //face ->id face
+        {
+          fe_values.reinit (cell->neighbor(face));
+          fe_values.get_function_values (old_timestep_solution, old_timestep_solution_values_inv);
+        }
+      }
+    }
       
     // Again, material_id == 0 corresponds to 
     // the domain for fluid equations
     if (cell->material_id() == 0)
     {
       for (unsigned int q=0; q<n_q_points; ++q)
-      {       
+      { 
+        int is_on_b = 0;
+        double interface_check_x = 0;
+        double interface_check_y = 0;
+        double co_inv = 0;
+        for (int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
+        {
+          if (cell->neighbor_index(face) != -1)  
+          {
+            if (cell->material_id() !=  cell->neighbor(face)->material_id())
+            {
+              fe_values.reinit (cell);
+              interface_check_x = fe_values.get_quadrature().point(q)[0];
+              interface_check_y = fe_values.get_quadrature().point(q)[1];
+              if( interface_check_y - 0.887298 < 1e-06 && interface_check_y - 0.887298 > -1e-06 
+                      || interface_check_y - 0.112702 < 1e-06 && interface_check_y - 0.112702 > -1e-06 )
+              {
+                is_on_b = 1;
+                fe_values.reinit (cell->neighbor(face));
+                const typename DoFHandler<dim>::active_cell_iterator n_cell = cell->neighbor(face);
+                for( int q_cell=0; q_cell<n_q_points; q_cell++ )
+                {
+                  //iterieren ueber q punkte -> prufen, ob quadraturpunkt auf altem liegt
+                  if( interface_check_x - fe_values.get_quadrature().point(q)[0] < 1e-06 && interface_check_x - fe_values.get_quadrature().point(q)[0] > -1e-06 
+                      || interface_check_y - fe_values.get_quadrature().point(q)[1] < 1e-06 && interface_check_y - fe_values.get_quadrature().point(q)[1] > -1e-06 )
+                    co_inv = ALE_Transformations::get_co<dim> (q_cell, old_timestep_solution_values_inv);
+                }
+              }
+            }
+          }
+        }
+
         const double co = ALE_Transformations::get_co<dim> (q, old_solution_values);
         const Tensor<2,dim> pI = ALE_Transformations::get_pI<dim> (q, old_solution_values);
         const Tensor<1,dim> v = ALE_Transformations::get_v<dim> (q, old_solution_values);
@@ -1957,20 +2127,63 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
         /******
          *Concentration
          ******/
-        // The second convection term for the concentration in the fluid in the ALE formulation        
-        /*double convection_c_fluid_with_u;
-        //convection_c_fluid_with_u.clear();
-        convection_c_fluid_with_u = J * (grad_v * F_Inverse * co);
+        // The second convection term for the concentration in the fluid in the ALE formulation   
+        double convection_c_fluid = 0;
+        for( int l=0; l<dim; l++ )
+        {
+          for( int m=0; m<dim; m++ )
+          {
+            convection_c_fluid += J * (grad_co[l] * F_Inverse[l][m] * v[m]);
+          }
+        }
+
+        //convection_c_fluid = J * (grad_co * F_Inverse * v);
+        double convection_c_fluid_with_u = 0;
+        for( int l=0; l<dim; l++ )
+        {
+          for( int m=0; m<dim; m++ )
+          {
+            convection_c_fluid_with_u += J * (grad_co[l] * F_Inverse[l][m] * u[m]);
+          }
+        }
+        //convection_c_fluid_with_u = J * (grad_v * F_Inverse * co);
         
         // The third convection term for the concentration in the fluid in the ALE formulation       
-        double convection_c_fluid_with_old_timestep_u;
-        //convection_c_fluid_with_old_timestep_u.clear();
-        convection_c_fluid_with_old_timestep_u = J * (grad_v * F_Inverse * old_timestep_co);
+        double convection_c_fluid_with_old_timestep_u = 0;
+        for( int l=0; l<dim; l++ )
+        {
+          for( int m=0; m<dim; m++ )
+          {
+            convection_c_fluid_with_old_timestep_u += J * (grad_co[l] * F_Inverse[l][m] * old_timestep_u[m]);
+          }
+        }
+        //convection_c_fluid_with_old_timestep_u = J * (grad_v * F_Inverse * old_timestep_co);
 
-        // The convection term of the previous time step
+        /*// The convection term of the previous time step
         double old_timestep_convection_c_fluid;
         //old_timestep_convection_c_fluid.clear();
         old_timestep_convection_c_fluid = ( old_timestep_J * (old_timestep_grad_v * old_timestep_F_Inverse * old_timestep_co));*/
+
+        interface_check_x = 0;
+        interface_check_y = 0;
+        co_inv = 0;
+        for (int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
+        {
+          if (cell->neighbor_index(face) != -1)  
+          {
+            if (cell->material_id() !=  cell->neighbor(face)->material_id())
+            {
+              fe_values.reinit (cell);
+              interface_check_x = fe_values.get_quadrature().point(q)[0];
+              interface_check_y = fe_values.get_quadrature().point(q)[1];
+              if( interface_check_y - 0.887298 < 1e-06 && interface_check_y - 0.887298 > -1e-06 
+                      || interface_check_y - 0.112702 < 1e-06 && interface_check_y - 0.112702 > -1e-06 )
+              {
+                is_on_b = 1;
+              }
+            }
+          }
+        }
       
         for (unsigned int i=0; i<dofs_per_cell; ++i)
         {
@@ -2009,17 +2222,34 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
           } 
           else if (comp_i == 5)
           {
+            double adhesion = 0;
+            std::vector<double>         phi_i_c_inv(fe.n_dofs_per_face());   
+            for (unsigned int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
+            {
+              /*if (cell->neighbor_index(face) != -1)  
+              {
+                if (cell->material_id() !=  cell->neighbor(face)->material_id())
+                {
+                  //if () TODO: wenn q auf dieser face liegt -> q to ID
+                    co_inv = ALE_Transformations::get_co<dim> (0, old_timestep_solution_values_inv); //0 ersetzen mit richtiger ID
+                    //phi_i_c_inv[0] = fe_values[concentration].value (0, q); //0er ersetzen mit richtiger ID
+                    adhesion += ( kd * co - kd * co_inv );
+                }
+              }*/
+            }
+
             const double phi_i_c = fe_values[concentration].value (i, q);
             const Tensor<1,dim> phi_i_grads_c = fe_values[concentration].gradient (i, q);
-            /*local_rhs(i) -= ( compute_short_scale * (J + old_timestep_J)/2.0 * (co - old_timestep_co) * phi_i_c
-                + timestep * theta * J * (grad_v * F_Inverse * co) * phi_i_c
-                //+ timestep * theta *  J * F_Inverse * Df * grad_co * phi_i_grads_c 
-                //- (convection_c_fluid_with_u - convection_c_fluid_with_old_timestep_u) * phi_i_c*/
             local_rhs(i) -= ( compute_short_scale * (J + old_timestep_J)/2.0 * 
                               (co - old_timestep_co) * phi_i_c
                               + timestep * theta * J * Df * grad_co * F_Inverse * F_Inverse_T * phi_i_grads_c
-                              + timestep * theta * J * grad_co * F_Inverse * v * phi_i_c
-                              + theta * J * grad_co * F_Inverse * ( u - old_timestep_u ) * phi_i_c 
+                              + timestep * theta * convection_c_fluid * phi_i_c
+                              - convection_c_fluid_with_u * phi_i_c
+                              + convection_c_fluid_with_old_timestep_u * phi_i_c
+                              + is_on_b * kd * co_inv * phi_i_c
+                              //+ adhesion * phi_i_c
+                              //+ timestep * theta * J * grad_co * F_Inverse * v * phi_i_c
+                              //+ theta * J * grad_co * F_Inverse * ( u - old_timestep_u ) * phi_i_c 
                             ) * fe_values.JxW(q);
           }
         } // end i dofs   
@@ -2210,6 +2440,36 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
     {
       for (unsigned int q=0; q<n_q_points; ++q)
       {
+        int is_on_b = 0;
+        double interface_check_x = 0;
+        double interface_check_y = 0;
+        double co_inv = 0;
+        for (int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
+        {
+          if (cell->neighbor_index(face) != -1)  
+          {
+            if (cell->material_id() !=  cell->neighbor(face)->material_id())
+            {
+              fe_values.reinit (cell);
+              interface_check_x = fe_values.get_quadrature().point(q)[0];
+              interface_check_y = fe_values.get_quadrature().point(q)[1];
+              if( interface_check_y - 0.887298 < 1e-06 && interface_check_y - 0.887298 > -1e-06 
+                      || interface_check_y - 0.112702 < 1e-06 && interface_check_y - 0.112702 > -1e-06 )
+              {
+                is_on_b = 1;
+                fe_values.reinit (cell->neighbor(face));
+                const typename DoFHandler<dim>::active_cell_iterator n_cell = cell->neighbor(face);
+                for( int q_cell=0; q_cell<n_q_points; q_cell++ )
+                {
+                  //iterieren ueber q punkte -> prufen, ob quadraturpunkt auf altem liegt
+                  if( interface_check_x - fe_values.get_quadrature().point(q)[0] < 1e-06 && interface_check_x - fe_values.get_quadrature().point(q)[0] > -1e-06 
+                      || interface_check_y - fe_values.get_quadrature().point(q)[1] < 1e-06 && interface_check_y - fe_values.get_quadrature().point(q)[1] > -1e-06 )
+                    co_inv = ALE_Transformations::get_co<dim> (q_cell, old_timestep_solution_values_inv);
+                }
+              }
+            }
+          }
+        }
         // Growth
         //double g_growth = 1.0 * (1.0 + 0.01 * time);
         double g_growth = 0.0;
@@ -2282,6 +2542,27 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
                     2 * lame_coefficient_mu * 1.0/g_growth *
                     old_timestep_E) * 
               old_timestep_F_T);
+
+        is_on_b = 0;
+        interface_check_x = 0;
+        interface_check_y = 0;
+        for (int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
+        {
+          if (cell->neighbor_index(face) != -1)  
+          {
+            if (cell->material_id() !=  cell->neighbor(face)->material_id())
+            {
+              fe_values.reinit (cell);
+              interface_check_x = fe_values.get_quadrature().point(q)[0];
+              interface_check_y = fe_values.get_quadrature().point(q)[1];
+              if( interface_check_y - 0.887298 < 1e-06 && interface_check_y - 0.887298 > -1e-06 
+                      || interface_check_y - 0.112702 < 1e-06 && interface_check_y - 0.112702 > -1e-06 )
+              {
+                is_on_b = 1;
+              }
+            }
+          }
+        }
         
         Tensor<2,dim> old_timestep_stress_term;
         old_timestep_stress_term.clear();
@@ -2321,14 +2602,13 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
             const Tensor<1,dim> phi_i_grads_c = fe_values[concentration].gradient (i, q);
           
             local_rhs(i) -= ( compute_short_scale * (co - old_timestep_co) * phi_i_c
-                            + timestep * theta * (
-                            v * grad_co * phi_i_c 
-                            + Ds * grad_co * phi_i_grads_c 
-                            + (k * co)/(K + co) * phi_i_c
-                            )
+                            - timestep * theta * grad_co * v * phi_i_c 
+                            + timestep * theta * Ds * grad_co * phi_i_grads_c 
+                            - timestep * (k * co)/(K + co) * phi_i_c
+                            + is_on_b * ka * co_inv * phi_i_c
                             //+ timestep * (1-theta) TODO
 
-              ) *  fe_values.JxW(q);
+                            ) *  fe_values.JxW(q);
             //local_rhs(i) -= (co * phi_i_c) *  fe_values.JxW(q);
           }
         } // end i    
@@ -2342,6 +2622,32 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
     } // end if (for STVK material)  
   }  // end cell   
   timer.leave_subsection(); 
+  //std::cout << "Maximaler Wert der Konzentration nach dem Zeitschritt: "
+  //        << solution.block(3).linfty_norm() << std::endl;
+}
+
+template <int dim>
+void
+FSI_ALE_Problem<dim>::set_initial_condition( )
+{
+  typename DoFHandler<dim>::active_cell_iterator
+    cell = dof_handler.begin_active(),
+    endc = dof_handler.end();
+
+  double c_initial = 0;
+        
+  //std::vector<types::global_dof_index> local_dof_indices(fe.n_dofs_per_cell());
+  //cell->get_dof_indices(local_dof_indices);
+
+  for (unsigned int i = 0; i < solution.block(3).size(); ++i)
+  {
+    //c_initial = (cell->material_id() == 1) ? 10.0 : 1.0;
+      //const unsigned int component = fe.system_to_component_index(i).first;
+      //if (component == 5) // Konzentration c
+          //solution(local_dof_indices[i]) = c_initial;
+    solution.block(3)(i) = 10; // c_initial;
+    //cell++;
+  }
 }
 
 
@@ -2384,48 +2690,50 @@ FSI_ALE_Problem<dim>::set_initial_bc (const double time)
 
   component_mask[0] = true;
   component_mask[1] = true;
-  component_mask[dim+dim+1] = true;       
+  component_mask[dim+dim+1] = false;    
+  VectorTools::interpolate_boundary_values (dof_handler,
+                1,
+                BoundaryParabel<dim>(time, u_y,
+                   compute_short_scale),
+                boundary_values,
+                component_mask);    
     
   VectorTools::interpolate_boundary_values (dof_handler,
                                               2,
+                                              /*BoundarySolid<dim>(),
+                                              boundary_values,
+                                              component_mask);*/
                 dealii::Functions::ZeroFunction<dim>(number_coefficients),  
                                               boundary_values,
                                               component_mask);
 
   VectorTools::interpolate_boundary_values (dof_handler,
                                               3,
+                                              /*BoundarySolid<dim>(),
+                                              boundary_values,
+                                              component_mask);*/
                 dealii::Functions::ZeroFunction<dim>(number_coefficients),  
                                               boundary_values,
                                               component_mask);
  
   VectorTools::interpolate_boundary_values (dof_handler,
                 80,
+                /*BoundarySolid<dim>(),
+                                              boundary_values,
+                                              component_mask);*/
                 dealii::Functions::ZeroFunction<dim>(number_coefficients),  
                 boundary_values,
                 component_mask);
     
   VectorTools::interpolate_boundary_values (dof_handler,
                 82,
+                /*BoundarySolid<dim>(),
+                                              boundary_values,
+                                              component_mask);*/
                 dealii::Functions::ZeroFunction<dim>(number_coefficients),  
                 boundary_values,
                 component_mask);
    
-    
-  component_mask[0] = false;
-  component_mask[1] = false;   
-  component_mask[dim+dim+1] = false;    
-    VectorTools::interpolate_boundary_values (dof_handler,
-                2,
-                BoundaryParabel<dim>(time, u_y,
-                   compute_short_scale),
-                boundary_values,
-                component_mask); 
-    
-  VectorTools::interpolate_boundary_values (dof_handler,
-                1,
-                dealii::Functions::ZeroFunction<dim>(number_coefficients),  
-                boundary_values,
-                component_mask);
     
   for (typename std::map<unsigned int, double>::const_iterator
         i = boundary_values.begin();
@@ -2459,7 +2767,7 @@ FSI_ALE_Problem<dim>::set_newton_bc ()
    
   component_mask[0] = true;
   component_mask[1] = true;  
-  component_mask[dim+dim+1] = true;     
+  component_mask[dim+dim+1] = false;     
 
   VectorTools::interpolate_boundary_values (dof_handler,
                                               2,
@@ -3074,6 +3382,8 @@ template <int dim>
 void FSI_ALE_Problem<dim>::run () 
 {  
   setup_system();
+  set_initial_condition( );
+  //std::cout << "Initial concentration norm: " << solution.l2_norm() << std::endl;
 
   std::cout << "\n==============================" 
       << "==========================================="  << std::endl;
@@ -3121,9 +3431,9 @@ void FSI_ALE_Problem<dim>::run ()
 
     max_no_timesteps = 251; //250;
     if (timestep_number < 1)
-      timestep = 1.0;
+      timestep = 1;
     else 
-      timestep = 1.0;//86400.0;
+      timestep = 1;//86400.0;
 
     //compute_short_scale = 0.0;
     alpha_growth = alpha_growth + gamma_zero * timestep * 1.0/(1.0 + drag/50.0);
