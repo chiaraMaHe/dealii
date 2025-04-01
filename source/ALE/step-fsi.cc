@@ -921,7 +921,8 @@ BoundaryParabel<dim>::value (const Point<dim>  &p,
   // the inflow. Hence, we use the cosine function 
   // to control the inflow at the beginning until
   // the total time 2.0 has been reached. 
-  double inflow_velocity = 1.5;
+  double inflow_velocity = 0.1;
+  double inflow = 2;
 
   //v^in = 1.5*(10 w + 0.1) * (1-y^2)
   //
@@ -939,6 +940,7 @@ BoundaryParabel<dim>::value (const Point<dim>  &p,
     }
     else if (_compute_short_scale)
     {
+      return 0;
       double sin_tmp = (1.0 + std::sin(2.0*pi*_time));
 
       double total_inflow = ( (p(0) == -5) && (p(1) <= 1.0) && (p(1) >= -1.0) ?  inflow_velocity * 
@@ -954,14 +956,14 @@ BoundaryParabel<dim>::value (const Point<dim>  &p,
   {
     if (!_compute_short_scale)
     {
-      return   ( (p(0) == 5) && (p(1) <= 1.0) && (p(1) >= -1.0) ? 10 - inflow_velocity * 
+      return   ( (p(0) == 5) && (p(1) <= 1.0) && (p(1) >= -1.0) ? 10 - inflow * 
          ((beta_inflow + 10.0 * (1.0 -  _u_y)) * (1.0 - p(1)*p(1))) : 5);
     }
     else if (_compute_short_scale)
     {
       double sin_tmp = (1.0 + std::sin(2.0*pi*_time));
 
-      double total_inflow = ( (p(0) == 5) && (p(1) <= 1.0) && (p(1) >= -1.0) ? 10 - inflow_velocity * 
+      double total_inflow = ( (p(0) == 5) && (p(1) <= 1.0) && (p(1) >= -1.0) ? 5 - inflow * 
          sin_tmp * 
          ((beta_inflow + 10.0 * (1.0 -  _u_y)) * (1.0 - p(1)*p(1))) : 5);
 
@@ -1104,6 +1106,9 @@ private:
   //Biofilm concentration
   double k, K;
 
+  //nutrients
+  double c_n;
+
   //volume expansion bakterium
   Tensor<1,dim> volume_expansion;
 
@@ -1172,12 +1177,12 @@ void FSI_ALE_Problem<dim>::set_runtime_parameters ()
   alpha_growth = 0.0; // 0.02
 
   density_fluid = 1.0;
-  density_structure = 1.0; 
-  viscosity = 0.3;  // 1.0
-  lame_coefficient_mu = 1.0e+4;  // 1.0e+3
-  poisson_ratio_nu = 0.2; 
+  density_structure = 3*1e+02; 
+  viscosity = 1.0;//0.3;  // 1.0
+  lame_coefficient_mu = 250./7.;//1.0e+3;  // 1.0e+4
+  //poisson_ratio_nu = 0.2; 
   
-  lame_coefficient_lambda =  4.0e+4; //(2 * poisson_ratio_nu * lame_coefficient_mu)/(1.0 - 2 * poisson_ratio_nu);
+  lame_coefficient_lambda =  1000./7.;//4.0e+4; //(2 * poisson_ratio_nu * lame_coefficient_mu)/(1.0 - 2 * poisson_ratio_nu);
 
   // Diffusion parameters to control the fluid mesh motion
   // The higher these parameters the stiffer the fluid mesh.
@@ -1185,20 +1190,23 @@ void FSI_ALE_Problem<dim>::set_runtime_parameters ()
   alpha_us = 1.0;
 
   //Biofilm Concentration coefficients
-  k = 30; //3*1e-2; //max Wachstumsgeschwindigkeit
-  K = 2; //3*1e-3; //Halb-Sättigungskonstante - Michaelis-Menten-Konstante 
+  k = 3*1e-2; //max Wachstumsgeschwindigkeit
+  K = 3*1e-3; //Halb-Sättigungskonstante - Michaelis-Menten-Konstante 
+
+  //Nutrients
+  c_n = 1;
 
   //volume expansion bakterium
   for( int i=0; i<dim; i++ )
-    volume_expansion[i] = 1e-06;
+    volume_expansion[i] = 0;//1e-02;
 
   //adhesion, detachment
-  ka = 1e-04;
-  kd = 1e-08;
+  ka = -1e-02;
+  kd = -1e-05; //6
 
   //Diffusion coefficients
   Df = 2.5 * 1e-06;
-  Ds = 1e-09;
+  Ds = 2.5 * 1e-09;
   
   // Timestepping schemes
   //BE, CN, CN_shifted
@@ -1206,13 +1214,13 @@ void FSI_ALE_Problem<dim>::set_runtime_parameters ()
 
   // Timestep size:
   // TODO
-  timestep = 1;//43200.0; //86400.0;
+  timestep = 10;//43200.0; //86400.0;
 
   // Maximum number of timesteps:
   // FSI 1: 25 , T= 25   (timestep == 1.0)
   // FSI 2: 1500, T= 15  (timestep == 1.0e-2)
   // FSI 3: 10000, T= 10 (timestep == 1.0e-3)
-  max_no_timesteps = 1500;
+  max_no_timesteps = 10;//15000;
   max_no_timesteps_short_scale = 50;
   
   // A variable to count the number of time steps
@@ -1879,8 +1887,9 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
             const unsigned int comp_j = fe.system_to_component_index(j).first; 
             if (comp_j == 0 || comp_j == 1)
             {
-              local_matrix(j,i) += (compute_short_scale * density_structure * phi_i_v[i] * phi_i_v[j]                  
-                                    + timestep * theta * scalar_product( sigma_co_lin, //piola_kirchhoff_stress_structure_STVK_LinALL + (k*phi_i_c[i]* (K+co) - k* co * phi_i_c[i])/(std::pow((K+co),2.0) ) * Identity,
+              local_matrix(j,i) += (//compute_short_scale * density_structure * phi_i_v[i] * phi_i_v[j]                  
+                                    //+
+                                    timestep * theta * scalar_product( sigma_co_lin, //piola_kirchhoff_stress_structure_STVK_LinALL + (k*phi_i_c[i]* (K+co) - k* co * phi_i_c[i])/(std::pow((K+co),2.0) ) * Identity,
                                     phi_i_grads_v[j]) 
                                     ) * fe_values.JxW(q);       
             }        
@@ -1890,7 +1899,7 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
                                     (compute_short_scale * phi_i_u[i] * phi_i_u[j] 
                                      - timestep * theta * phi_i_v[i] * phi_i_u[j]
                                     )
-                                      - volume_expansion * phi_i_c[i] * phi_i_u[j]        
+                                    - volume_expansion * phi_i_c[i] * phi_i_u[j]        
                                     ) *  fe_values.JxW(q);
             }
             else if (comp_j == 4)
@@ -1902,7 +1911,8 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
               local_matrix(j,i) += (compute_short_scale * phi_i_c[i] * phi_i_c[j]
                                     - timestep * theta * (grad_co * phi_i_v[i] + phi_i_grads_c[i] * v ) * phi_i_c[j]
                                     + timestep * ( Ds * phi_i_grads_c[i] ) * phi_i_grads_c[j] 
-                                    - timestep * ( (k*phi_i_c[i]* (K+co) - k* co * phi_i_c[i])/(std::pow((K+co),2.0) ) ) * phi_i_c[j]
+                                    //- timestep * ( (10*phi_i_c[i]* (K+co) - 10* co * phi_i_c[i])/(std::pow((K+co),2.0) ) ) * phi_i_c[j]
+                                    - timestep * ( k * c_n )/(K + c_n) * phi_i_c[i] * phi_i_c[j]
                                     + is_on_b * J * ( kd * phi_i_c[i]) * phi_i_c[j]
               ) * fe_values.JxW(q); 
               /*if (debug && fe.system_to_component_index(i).first == 5)
@@ -2604,7 +2614,7 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
             local_rhs(i) -= ( compute_short_scale * (co - old_timestep_co) * phi_i_c
                             - timestep * theta * grad_co * v * phi_i_c 
                             + timestep * theta * Ds * grad_co * phi_i_grads_c 
-                            - timestep * (k * co)/(K + co) * phi_i_c
+                            //- timestep * (k * co)/(K + co) * phi_i_c
                             + is_on_b * ka * co_inv * phi_i_c
                             //+ timestep * (1-theta) TODO
 
@@ -2638,16 +2648,59 @@ FSI_ALE_Problem<dim>::set_initial_condition( )
         
   //std::vector<types::global_dof_index> local_dof_indices(fe.n_dofs_per_cell());
   //cell->get_dof_indices(local_dof_indices);
+  const unsigned int block = 3;  // Gewünschter Block
 
-  for (unsigned int i = 0; i < solution.block(3).size(); ++i)
+  for (unsigned int i = 0; i < solution.block(3).size(); ++i)//, ++cell)
   {
-    //c_initial = (cell->material_id() == 1) ? 10.0 : 1.0;
-      //const unsigned int component = fe.system_to_component_index(i).first;
-      //if (component == 5) // Konzentration c
-          //solution(local_dof_indices[i]) = c_initial;
-    solution.block(3)(i) = 10; // c_initial;
-    //cell++;
+    const unsigned int lokaler_index = i;  // Index im Block
+
+    // Block-Offsets berechnen
+    unsigned int offset = 0;
+    for (unsigned int b = 0; b < block; ++b)
+    {
+        offset += solution.block(b).size();  // Größe jedes vorherigen Blocks addieren
+    }
+
+    const unsigned int globaler_index = offset + lokaler_index;
+
+    for (const auto &cell : dof_handler.active_cell_iterators())
+    {
+        std::vector<types::global_dof_index> dof_indices(cell->get_fe().dofs_per_cell);
+        cell->get_dof_indices(dof_indices);
+
+        if (std::find(dof_indices.begin(), dof_indices.end(), globaler_index) != dof_indices.end())
+        {
+            c_initial = (cell->material_id() == 1) ? 10.0 : 2.0;
+            break;
+        }
+    }
+    //c_initial = (cell->material_id() == 1) ? 10.0 : 2.0;
+    solution.block(3)(i) = c_initial;
   }
+
+
+  /*unsigned int dofs_per_cell = fe.dofs_per_cell;
+  std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
+
+  //int i = 0;
+  double c_initial = 0;
+  for (; cell != endc; ++cell)
+  {
+    cell->get_dof_indices(local_dof_indices);
+    for (unsigned int j = 0; j < dofs_per_cell; ++j)
+    {
+      // Prüfe, ob der aktuelle DoF zu block(3) gehört
+      if (fe.system_to_component_index(j).first == 5)
+      {
+
+        c_initial = (cell->material_id() == 1) ? 10.0 : 2.0;
+        if (local_dof_indices[j] < solution.block(3).size())
+        {
+            solution.block(3)(local_dof_indices[j]) = local_dof_indices[j];
+        }
+      }
+    }
+  }*/
 }
 
 
@@ -2861,7 +2914,7 @@ void FSI_ALE_Problem<dim>::newton_iteration (const double time)
   const double lower_bound_newton_residuum = 1.0e-8;
 
   // TODO
-  const unsigned int max_no_newton_steps  = 10;
+  const unsigned int max_no_newton_steps  = 20;
 
   // Decision whether the system matrix should be build
   // at each Newton step
@@ -3429,11 +3482,11 @@ void FSI_ALE_Problem<dim>::run ()
     }*/
     compute_short_scale = 1.0;
 
-    max_no_timesteps = 251; //250;
+    max_no_timesteps = 15000; //250;
     if (timestep_number < 1)
-      timestep = 1;
+      timestep = 10;
     else 
-      timestep = 1;//86400.0;
+      timestep = 10;//86400.0;
 
     //compute_short_scale = 0.0;
     alpha_growth = alpha_growth + gamma_zero * timestep * 1.0/(1.0 + drag/50.0);
