@@ -1,7 +1,7 @@
 [
 {
   "directory": "/home/chiara/Documents/git/src/dealII/biofilm/dealii/source/ALE",
-  "command": "/usr/bin/c++ -DDEBUG -D_GLIBCXX_ASSERTIONS -isystem /home/chiara/Documents/install/build/dealII/biofilm/include -isystem /home/chiara/Documents/install/build/dealII/biofilm/include/deal.II/bundled -pedantic -Wall -Wextra -Wmissing-braces -Woverloaded-virtual -Wpointer-arith -Wsign-compare -Wsuggest-override -Wswitch -Wsynth -Wwrite-strings -Wno-placement-new -Wno-deprecated-declarations -Wno-literal-suffix -Wno-psabi -Wno-parentheses -Wno-unused-local-typedefs -fopenmp-simd -O0 -ggdb -Wa,--compress-debug-sections -o CMakeFiles/step-fsi.dir/step-fsi.cc.o -c /home/chiara/Documents/git/src/dealII/biofilm/dealii/source/ALE/step-fsi.cc",
+  "command": "/usr/bin/c++ -DNDEBUG -isystem /home/chiara/Documents/install/build/dealII/biofilm/include -isystem /home/chiara/Documents/install/build/dealII/biofilm/include/deal.II/bundled -pedantic -Wall -Wextra -Wmissing-braces -Woverloaded-virtual -Wpointer-arith -Wsign-compare -Wsuggest-override -Wswitch -Wsynth -Wwrite-strings -Wno-placement-new -Wno-deprecated-declarations -Wno-literal-suffix -Wno-psabi -Wno-parentheses -Wno-unused-local-typedefs -fopenmp-simd -O2 -funroll-loops -funroll-all-loops -Wno-unused-parameter -o CMakeFiles/step-fsi.dir/step-fsi.cc.o -c /home/chiara/Documents/git/src/dealII/biofilm/dealii/source/ALE/step-fsi.cc",
   "file": "/home/chiara/Documents/git/src/dealII/biofilm/dealii/source/ALE/step-fsi.cc",
   "output": "CMakeFiles/step-fsi.dir/step-fsi.cc.o"
 }

@@ -67,7 +67,7 @@ include CMakeFiles/run.dir/compiler_depend.make
 include CMakeFiles/run.dir/progress.make
 
 CMakeFiles/run: step-fsi
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --blue --bold --progress-dir=/home/chiara/Documents/git/src/dealII/biofilm/dealii/source/ALE/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Run step-fsi with Debug configuration"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --blue --bold --progress-dir=/home/chiara/Documents/git/src/dealII/biofilm/dealii/source/ALE/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Run step-fsi with Release configuration"
 	./step-fsi
 
 run: CMakeFiles/run

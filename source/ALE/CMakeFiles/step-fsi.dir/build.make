@@ -92,7 +92,7 @@ step__fsi_EXTERNAL_OBJECTS =
 
 step-fsi: CMakeFiles/step-fsi.dir/step-fsi.cc.o
 step-fsi: CMakeFiles/step-fsi.dir/build.make
-step-fsi: /home/chiara/Documents/install/build/dealII/biofilm/lib/libdeal_II.g.so.9.7.0-pre
+step-fsi: /home/chiara/Documents/install/build/dealII/biofilm/lib/libdeal_II.so.9.7.0-pre
 step-fsi: /usr/lib/x86_64-linux-gnu/liblapack.so
 step-fsi: /usr/lib/x86_64-linux-gnu/libblas.so
 step-fsi: /usr/lib/x86_64-linux-gnu/libz.so

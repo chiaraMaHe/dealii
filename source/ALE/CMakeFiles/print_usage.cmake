@@ -4,7 +4,7 @@ message(
 #  Project  step-fsi  set up with  deal.II-9.7.0-pre  found at
 #      /home/chiara/Documents/install/build/dealII/biofilm
 #
-#  CMAKE_BUILD_TYPE:          Debug
+#  CMAKE_BUILD_TYPE:          Release
 #
 #  You can now run
 #       $ make                - to compile and link the program
