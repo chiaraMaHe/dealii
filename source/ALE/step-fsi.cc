@@ -963,9 +963,9 @@ BoundaryParabel<dim>::value (const Point<dim>  &p,
     {
       double sin_tmp = (1.0 + std::sin(2.0*pi*_time));
 
-      double total_inflow = ( (p(0) == 5) && (p(1) <= 1.0) && (p(1) >= -1.0) ? 5 - inflow * 
+      double total_inflow = ( (p(0) == 5) && (p(1) <= 1.0) && (p(1) >= -1.0) ? 2 - inflow * 
          sin_tmp * 
-         ((beta_inflow + 10.0 * (1.0 -  _u_y)) * (1.0 - p(1)*p(1))) : 5);
+         ((beta_inflow + 10.0 * (1.0 -  _u_y)) * (1.0 - p(1)*p(1))) : 2);
 
       //std::cout <<  _time << "   " << sin_tmp << "   " << total_inflow << std::endl;
 
@@ -1191,18 +1191,18 @@ void FSI_ALE_Problem<dim>::set_runtime_parameters ()
 
   //Biofilm Concentration coefficients
   k = 3*1e-2; //max Wachstumsgeschwindigkeit
-  K = 3*1e-3; //Halb-Sättigungskonstante - Michaelis-Menten-Konstante 
+  K = 3*1e-4; //Halb-Sättigungskonstante - Michaelis-Menten-Konstante 
 
   //Nutrients
   c_n = 1;
 
   //volume expansion bakterium
   for( int i=0; i<dim; i++ )
-    volume_expansion[i] = 0;//1e-02;
+    volume_expansion[i] = 1e-01;
 
   //adhesion, detachment
   ka = -1e-02;
-  kd = -1e-05; //6
+  kd = 0;//-1e-05; //6
 
   //Diffusion coefficients
   Df = 2.5 * 1e-06;
@@ -2914,7 +2914,7 @@ void FSI_ALE_Problem<dim>::newton_iteration (const double time)
   const double lower_bound_newton_residuum = 1.0e-8;
 
   // TODO
-  const unsigned int max_no_newton_steps  = 20;
+  const unsigned int max_no_newton_steps  = 30;
 
   // Decision whether the system matrix should be build
   // at each Newton step
