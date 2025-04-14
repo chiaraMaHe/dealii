@@ -528,28 +528,39 @@ namespace NSE_in_ALE
   double get_Incompressibility_ALE (unsigned int q,
            std::vector<std::vector<Tensor<1,dim> > > old_solution_grads)   
   {
-    return (old_solution_grads[q][0][0] +
-      old_solution_grads[q][dim+1][1] * old_solution_grads[q][0][0] -
-      old_solution_grads[q][dim][1] * old_solution_grads[q][1][0] -
-      old_solution_grads[q][dim+1][0] * old_solution_grads[q][0][1] +
-      old_solution_grads[q][1][1] +
-      old_solution_grads[q][dim][0] * old_solution_grads[q][1][1]); 
+    return (old_solution_grads[q][0][0] + old_solution_grads[q][dim+1][1] * old_solution_grads[q][0][0] -
+      old_solution_grads[q][dim][1] * old_solution_grads[q][1][0] - old_solution_grads[q][dim+1][0] * old_solution_grads[q][0][1] +
+      old_solution_grads[q][1][1] + old_solution_grads[q][dim][0] * old_solution_grads[q][1][1]); 
 
   }
 
-  template <int dim> 
+  template <int dim>
+  inline
+  double
+  get_Incompressibility_ALE_LinAll (const Tensor<2,dim> phi_i_grads_v,
+                    const Tensor<2,dim> phi_i_grads_u,
+                    unsigned int q,
+                    const std::vector<std::vector<Tensor<1,dim> > > old_solution_grads)
+  {
+    return (phi_i_grads_v[0][0] + phi_i_grads_v[1][1] +
+        phi_i_grads_u[1][1] * old_solution_grads[q][0][0] + old_solution_grads[q][dim+1][1] * phi_i_grads_v[0][0] -
+        phi_i_grads_u[0][1] * old_solution_grads[q][1][0] - old_solution_grads[q][dim+0][1] * phi_i_grads_v[1][0] -
+        phi_i_grads_u[1][0] * old_solution_grads[q][0][1] - old_solution_grads[q][dim+1][0] * phi_i_grads_v[0][1] +
+        phi_i_grads_u[0][0] * old_solution_grads[q][1][1] + old_solution_grads[q][dim+0][0] * phi_i_grads_v[1][1]);
+  } 
+
+
+  /*template <int dim> 
   inline
   double get_Incompressibility_ALE_LinAll (const Tensor<2,dim> phi_i_grads_v,
             const Tensor<2,dim> phi_i_grads_u,
             unsigned int q,         
             const std::vector<std::vector<Tensor<1,dim> > > old_solution_grads)           
   {
-    return (phi_i_grads_v[0][0] + phi_i_grads_v[1][1] + 
-      phi_i_grads_u[1][1] * old_solution_grads[q][0][0] -
-      phi_i_grads_u[0][1] * old_solution_grads[q][1][0] -
-      phi_i_grads_u[1][0] * old_solution_grads[q][0][1] +
+    return (phi_i_grads_v[0][0] + phi_i_grads_v[1][1] + phi_i_grads_u[1][1] * old_solution_grads[q][0][0] -
+      phi_i_grads_u[0][1] * old_solution_grads[q][1][0] - phi_i_grads_u[1][0] * old_solution_grads[q][0][1] +
       phi_i_grads_u[0][0] * old_solution_grads[q][1][1]);
-  }
+  }*/
 
 
   template <int dim> 
@@ -921,14 +932,14 @@ BoundaryParabel<dim>::value (const Point<dim>  &p,
   // the inflow. Hence, we use the cosine function 
   // to control the inflow at the beginning until
   // the total time 2.0 has been reached. 
-  double inflow_velocity = 0.1;
+  double inflow_velocity = 0;//0.1;//2.5*1e-02;
   double inflow = 2;
 
   //v^in = 1.5*(10 w + 0.1) * (1-y^2)
   //
   //statt 10w +1. Kannst du das ändern?
   // TODO
-  double beta_inflow = 1.0e-1; //0.1;
+  double beta_inflow = 1;//1.0e-1; //0.1;
 
   //changed to have a boundary condition for the concentration
   if (component == 0 )//|| component == 5) 
@@ -940,7 +951,7 @@ BoundaryParabel<dim>::value (const Point<dim>  &p,
     }
     else if (_compute_short_scale)
     {
-      return 0;
+      //return 0;
       double sin_tmp = (1.0 + std::sin(2.0*pi*_time));
 
       double total_inflow = ( (p(0) == -5) && (p(1) <= 1.0) && (p(1) >= -1.0) ?  inflow_velocity * 
@@ -963,9 +974,9 @@ BoundaryParabel<dim>::value (const Point<dim>  &p,
     {
       double sin_tmp = (1.0 + std::sin(2.0*pi*_time));
 
-      double total_inflow = ( (p(0) == 5) && (p(1) <= 1.0) && (p(1) >= -1.0) ? 2 - inflow * 
+      double total_inflow = ( (p(0) == 5) && (p(1) <= 1.0) && (p(1) >= -1.0) ? 200 - inflow * 
          sin_tmp * 
-         ((beta_inflow + 10.0 * (1.0 -  _u_y)) * (1.0 - p(1)*p(1))) : 2);
+         ((beta_inflow + 10.0 * (1.0 -  _u_y)) * (1.0 - p(1)*p(1))) : 200);
 
       //std::cout <<  _time << "   " << sin_tmp << "   " << total_inflow << std::endl;
 
@@ -1192,18 +1203,18 @@ void FSI_ALE_Problem<dim>::set_runtime_parameters ()
   //Biofilm Concentration coefficients
   k = 3*1e-2;//3*1e-2; //max Wachstumsgeschwindigkeit
   K = 3*1e-4; //Halb-Sättigungskonstante - Michaelis-Menten-Konstante 
-  k1 = 0*1e-1;
-  K1 = 1e-4;
+  k1 = 1e-4;
+  K1 = 1e-5;
 
   //Nutrients
   c_n = 1;
 
   //volume expansion bakterium
   for( int i=0; i<dim; i++ )
-    volume_expansion[i] = -1e-03;
+    volume_expansion[i] = 1e-10;
 
   //adhesion, detachment
-  ka = -1e-01;
+  ka = -1e-08;//-1;//-5*1e-01;//-1e-02;//-1e-01; 
   kd = 0;//-1e-05; //6
 
   //Diffusion coefficients
@@ -1252,7 +1263,7 @@ void FSI_ALE_Problem<dim>::set_runtime_parameters ()
   // fluid-structure interaction benchmark problems 
   // (Lit. J. Hron, S. Turek, 2006)
   std::string grid_name;
-  grid_name  = "channel_biofilm_Apr_2025_2.inp";
+  grid_name  = "channel_growth_Sep_2013.inp";
   
   GridIn<dim> grid_in;
   grid_in.attach_triangulation (triangulation);
@@ -1675,14 +1686,14 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
             const unsigned int comp_j = fe.system_to_component_index(j).first; 
             if (comp_j == 0 || comp_j == 1)
             {   
-              local_matrix(j,i) += (compute_short_scale * accelaration_term_LinAll * phi_i_v[j] +   
+              local_matrix(j,i) += (compute_short_scale * accelaration_term_LinAll * phi_i_v[j]   
                                     + timestep * theta *            
-                                    convection_fluid_LinAll_short * phi_i_v[j]              
+                                    convection_fluid_LinAll_short * phi_i_v[j] 
                                     - convection_fluid_u_LinAll_short * phi_i_v[j]
                                     + convection_fluid_u_old_LinAll_short * phi_i_v[j]
                                     + timestep * scalar_product(stress_fluid_ALE_1st_term_LinAll, phi_i_grads_v[j])
                                     + timestep * theta *
-                                    scalar_product(stress_fluid_ALE_2nd_term_LinAll, phi_i_grads_v[j])
+                                    scalar_product(stress_fluid_ALE_2nd_term_LinAll, phi_i_grads_v[j])           
                                     ) * fe_values.JxW(q);
             }             
             else if (comp_j == 2 || comp_j == 3)
@@ -1873,15 +1884,15 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
 
           //sym( lambda * tr(E) * I + 2mu * E + R_s (c) * I )
           Tensor<2,dim> sigma_co_lin = lame_coefficient_lambda * tr_E_LinU * Identity
-                                  + 2 * lame_coefficient_mu * E_LinU 
+                                  + 2 * lame_coefficient_mu * E_LinU
                                   - ( (k*phi_i_c[i]* (K+co) - k*co * phi_i_c[i])/(std::pow((K+co),2.0) ) ) * Identity;
         
           // STVK
           // Piola-kirchhoff stress structure STVK linearized in all directions       
-          // Tensor<2,dim> piola_kirchhoff_stress_structure_STVK_LinALL;
-          // piola_kirchhoff_stress_structure_STVK_LinALL =  lame_coefficient_lambda * 1.0/(g_growth) * F_LinU * tr_E * Identity 
-          //                                              + lame_coefficient_lambda * 1.0/(g_growth) * F * tr_E_LinU * Identity
-          //                                              + 2 * lame_coefficient_mu * 1.0/(g_growth) *  (F_LinU * E + F * E_LinU);
+           Tensor<2,dim> piola_kirchhoff_stress_structure_STVK_LinALL;
+           piola_kirchhoff_stress_structure_STVK_LinALL =  lame_coefficient_lambda * 1.0/(g_growth) * F_LinU * tr_E * Identity 
+                                                        + lame_coefficient_lambda * 1.0/(g_growth) * F * tr_E_LinU * Identity
+                                                        + 2 * lame_coefficient_mu * 1.0/(g_growth) *  (F_LinU * E + F * E_LinU);
            
           for (unsigned int j=0; j<dofs_per_cell; ++j)
           {
@@ -1889,29 +1900,26 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
             const unsigned int comp_j = fe.system_to_component_index(j).first; 
             if (comp_j == 0 || comp_j == 1)
             {
-              local_matrix(j,i) += (//compute_short_scale * density_structure * phi_i_v[i] * phi_i_v[j]                  
-                                    //+ 
-                                    timestep * theta * scalar_product( sigma_co_lin, //piola_kirchhoff_stress_structure_STVK_LinALL + (k*phi_i_c[i]* (K+co) - k* co * phi_i_c[i])/(std::pow((K+co),2.0) ) * Identity,
+              local_matrix(j,i) += (compute_short_scale * density_structure * phi_i_v[i] * phi_i_v[j] +                  
+                                    timestep * theta * scalar_product( sigma_co_lin, //piola_kirchhoff_stress_structure_STVK_LinALL,
                                     phi_i_grads_v[j]) 
                                     ) * fe_values.JxW(q);       
             }        
             else if (comp_j == 2 || comp_j == 3)
             {
-              local_matrix(j,i) +=  (density_structure * alpha_us * 
+              local_matrix(j,i) += (density_structure * alpha_us * 
+                                    (compute_short_scale * phi_i_u[i] * phi_i_u[j] 
+                                      - timestep * theta * phi_i_v[i] * phi_i_u[j]
+                                      - volume_expansion * phi_i_c[i] * phi_i_u[j]   
+                                      )            
+                                    ) *  fe_values.JxW(q);
+
+              /*local_matrix(j,i) += (density_structure * alpha_us * 
                                      (//compute_short_scale * phi_i_u[i] * phi_i_u[j] 
                                      - timestep * theta * phi_i_v[i] * phi_i_u[j]
                                      - volume_expansion * phi_i_c[i] * phi_i_u[j]    
                                      )    
-                                    ) *  fe_values.JxW(q);
-            if( (phi_i_c[i] > 10))
-            {
-              std::cout << "phi*u: " << - timestep * theta * phi_i_v[i] * phi_i_u[j] << std::endl;
-              std::cout << "phi_i_v: " << phi_i_v[i] << std::endl;
-              std::cout << "volume: " << - volume_expansion * phi_i_c[i] * phi_i_u[j] << std::endl;
-              std::cout << "Volume: " << volume_expansion << std::endl;
-              std::cout << "c: " << phi_i_c[i] << std::endl;
-              std::cout << "phi_i_u: " << phi_i_u[j] << std::endl;
-            }
+                                    ) *  fe_values.JxW(q);*/
             }
             else if (comp_j == 4)
             {
@@ -2235,8 +2243,10 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
             //const Tensor<1,dim> phi_i_u = fe_values[displacements].value (i, q);
             const Tensor<2,dim> phi_i_grads_u = fe_values[displacements].gradient (i, q);
 
-            local_rhs(i) -= ( alpha_u/J * scalar_product(grad_u, phi_i_grads_u)
-                              ) * fe_values.JxW(q);
+            local_rhs(i) -= alpha_u/J * (scalar_product(grad_u, phi_i_grads_u)
+                           // Transport
+                           //+ 1000.0 * v * grad_u * phi_i_u
+                           ) * fe_values.JxW(q);
           }  
           else if (comp_i == 4)
           {
@@ -2545,7 +2555,8 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
         // STVK structure model
         Tensor<2,dim> sigma_structure_ALE;
         sigma_structure_ALE.clear();
-        sigma_structure_ALE = lame_coefficient_lambda * tr_E * Identity + 2 * lame_coefficient_mu * E - (k*co)/(K+co) * Identity;
+        sigma_structure_ALE = lame_coefficient_lambda * tr_E * Identity + 2 * lame_coefficient_mu * E
+                               - (k*co)/(K+co) * Identity;
         /*(1.0/J *
              F * (lame_coefficient_lambda * 1.0/g_growth * 
             tr_E * Identity +
@@ -2556,7 +2567,7 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
         
         Tensor<2,dim> stress_term;
         stress_term.clear();
-        stress_term = (J * sigma_structure_ALE * F_Inverse_T);
+        stress_term = sigma_structure_ALE;//(J * sigma_structure_ALE * F_Inverse_T);
         
         Tensor<2,dim> old_timestep_sigma_structure_ALE;
         old_timestep_sigma_structure_ALE.clear();
@@ -2602,18 +2613,17 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
             const Tensor<1,dim> phi_i_v = fe_values[velocities].value (i, q);
             const Tensor<2,dim> phi_i_grads_v = fe_values[velocities].gradient (i, q);
           
-            local_rhs(i) -= (//compute_short_scale * density_structure * (v - old_timestep_v) * phi_i_v 
-                           //+ 
-                           timestep * theta * scalar_product(stress_term,phi_i_grads_v)
-                           //+ timestep * (1.0-theta) * scalar_product(old_timestep_stress_term, phi_i_grads_v)  TODO
+            local_rhs(i) -= (compute_short_scale * density_structure * (v - old_timestep_v) * phi_i_v
+                           + timestep * theta * scalar_product(stress_term,phi_i_grads_v) 
+                           //+ timestep * (1.0-theta) * scalar_product(old_timestep_stress_term, phi_i_grads_v) //TODO
                            ) * fe_values.JxW(q);
           }   
           else if (comp_i == 2 || comp_i == 3)
           {
             const Tensor<1,dim> phi_i_u = fe_values[displacements].value (i, q);
             local_rhs(i) -=  (density_structure * alpha_us * 
-            (//compute_short_scale * (u - old_timestep_u) * phi_i_u -
-             -timestep * (theta * v + (1.0-theta) * 
+            (compute_short_scale * (u - old_timestep_u) * phi_i_u -
+             timestep * (theta * v + (1.0-theta) * 
                    old_timestep_v) * phi_i_u)
             ) * fe_values.JxW(q);     
           }
@@ -2686,7 +2696,7 @@ FSI_ALE_Problem<dim>::set_initial_condition( )
 
         if (std::find(dof_indices.begin(), dof_indices.end(), globaler_index) != dof_indices.end())
         {
-            c_initial = (cell->material_id() == 1) ? 10.0 : 2.0;
+            c_initial = (cell->material_id() == 1) ? 10000.0 : 200.0;
             break;
         }
     }
@@ -2745,11 +2755,12 @@ FSI_ALE_Problem<dim>::set_initial_bc (const double time)
   // (Scalar) pressure
   component_mask[dim+dim] = false;  
 
-  component_mask[dim+dim+1] = true;   //false; 
-
   // Because of Pressure inflow
   component_mask[0] = true;
   component_mask[1] = true;
+  
+  component_mask[dim+dim+1] = true;   //false; 
+
   VectorTools::interpolate_boundary_values (dof_handler,
                 0,
                 BoundaryParabel<dim>(time, u_y,
@@ -2759,7 +2770,7 @@ FSI_ALE_Problem<dim>::set_initial_bc (const double time)
 
   component_mask[0] = true;
   component_mask[1] = true;
-  component_mask[dim+dim+1] = false;    
+  component_mask[dim+dim+1] = true;    
   VectorTools::interpolate_boundary_values (dof_handler,
                 1,
                 BoundaryParabel<dim>(time, u_y,
@@ -2941,6 +2952,7 @@ void FSI_ALE_Problem<dim>::newton_iteration (const double time)
   const unsigned int  max_no_line_search_steps = 10;
   const double line_search_damping = 0.6;
   double new_newton_residuum;
+  unsigned int stop_when_line_search_two_times_max_number = 0;
   
   // Application of the initial boundary conditions to the 
   // variational equations:
@@ -3000,6 +3012,14 @@ void FSI_ALE_Problem<dim>::newton_iteration (const double time)
     }    
      
     timer_newton.stop();
+    if (line_search_step == 10)
+      stop_when_line_search_two_times_max_number ++;
+
+    if (stop_when_line_search_two_times_max_number == 3)
+    {
+      std::cout << "Aborting Newton as line search does not help to converge anymore." << std::endl;
+      abort();
+    }
       
     std::cout << std::setprecision(5) <<newton_step << '\t' 
               << std::scientific << newton_residuum << '\t'
@@ -3500,9 +3520,9 @@ void FSI_ALE_Problem<dim>::run ()
 
     max_no_timesteps = 15000; //250;
     if (timestep_number < 1)
-      timestep = 43200; //600;
+      timestep = 43200; //5400; //43200;//10800; //21600; //600;
     else 
-      timestep = 43200; //600;//86400.0;
+      timestep = 43200; //5400; //43200;//10800; //21600; //600;//86400.0;
 
     //compute_short_scale = 0.0;
     alpha_growth = alpha_growth + gamma_zero * timestep * 1.0/(1.0 + drag/50.0);
