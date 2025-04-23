@@ -80,7 +80,7 @@ Die Kopplung ist dann folgendermaßen:
 
 // The first step, as always, is to include
 // the functionality of these 
-// deal.II library files and some C++ header
+// deal.II library files and some C++ heade
 // files.
 #include <deal.II/base/quadrature_lib.h>
 #include <deal.II/base/logstream.h>
@@ -932,7 +932,7 @@ BoundaryParabel<dim>::value (const Point<dim>  &p,
   // the inflow. Hence, we use the cosine function 
   // to control the inflow at the beginning until
   // the total time 2.0 has been reached. 
-  double inflow_velocity = 0;//0.1;//2.5*1e-02;
+  double inflow_velocity = 2.5*1e-03;
   double inflow = 2;
 
   //v^in = 1.5*(10 w + 0.1) * (1-y^2)
@@ -974,9 +974,9 @@ BoundaryParabel<dim>::value (const Point<dim>  &p,
     {
       double sin_tmp = (1.0 + std::sin(2.0*pi*_time));
 
-      double total_inflow = ( (p(0) == 5) && (p(1) <= 1.0) && (p(1) >= -1.0) ? 200 - inflow * 
+      double total_inflow = ( (p(0) == 5) && (p(1) <= 1.0) && (p(1) >= -1.0) ? 2 - inflow * 
          sin_tmp * 
-         ((beta_inflow + 10.0 * (1.0 -  _u_y)) * (1.0 - p(1)*p(1))) : 200);
+         ((beta_inflow + 10.0 * (1.0 -  _u_y)) * (1.0 - p(1)*p(1))) : 2);
 
       //std::cout <<  _time << "   " << sin_tmp << "   " << total_inflow << std::endl;
 
@@ -1214,7 +1214,7 @@ void FSI_ALE_Problem<dim>::set_runtime_parameters ()
     volume_expansion[i] = 1e-10;
 
   //adhesion, detachment
-  ka = -1e-08;//-1;//-5*1e-01;//-1e-02;//-1e-01; 
+  ka = 1e-05;//-1e-02;//-1;//-5*1e-01;//-1e-02;//-1e-01; 
   kd = 0;//-1e-05; //6
 
   //Diffusion coefficients
@@ -1686,14 +1686,14 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
             const unsigned int comp_j = fe.system_to_component_index(j).first; 
             if (comp_j == 0 || comp_j == 1)
             {   
-              local_matrix(j,i) += (compute_short_scale * accelaration_term_LinAll * phi_i_v[j]   
+              local_matrix(j,i) += (compute_short_scale * accelaration_term_LinAll * phi_i_v[j] +   
                                     + timestep * theta *            
-                                    convection_fluid_LinAll_short * phi_i_v[j] 
+                                    convection_fluid_LinAll_short * phi_i_v[j]              
                                     - convection_fluid_u_LinAll_short * phi_i_v[j]
                                     + convection_fluid_u_old_LinAll_short * phi_i_v[j]
                                     + timestep * scalar_product(stress_fluid_ALE_1st_term_LinAll, phi_i_grads_v[j])
                                     + timestep * theta *
-                                    scalar_product(stress_fluid_ALE_2nd_term_LinAll, phi_i_grads_v[j])           
+                                    scalar_product(stress_fluid_ALE_2nd_term_LinAll, phi_i_grads_v[j])
                                     ) * fe_values.JxW(q);
             }             
             else if (comp_j == 2 || comp_j == 3)
@@ -1714,7 +1714,7 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
                                       + timestep * theta * convection_fluid_c_LinAll_short * phi_i_c[j]
                                       - convection_fluid_c_u_LinAll_short * phi_i_c[j]      //*timestep * 1./timestep
                                       + convection_fluid_c_u_old_LinAll_short * phi_i_c[j]  //*timestep * 1./timestep
-                                      + is_on_b * J * ( ka * phi_i_c[i]) * phi_i_c[j]
+                                      + timestep * theta * is_on_b * J * ( ka * phi_i_c[i]) * phi_i_c[j]
                                     ) * fe_values.JxW(q); 
             }
             // end j dofs  
@@ -1884,15 +1884,15 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
 
           //sym( lambda * tr(E) * I + 2mu * E + R_s (c) * I )
           Tensor<2,dim> sigma_co_lin = lame_coefficient_lambda * tr_E_LinU * Identity
-                                  + 2 * lame_coefficient_mu * E_LinU
+                                  + 2 * lame_coefficient_mu * E_LinU 
                                   - ( (k*phi_i_c[i]* (K+co) - k*co * phi_i_c[i])/(std::pow((K+co),2.0) ) ) * Identity;
         
           // STVK
           // Piola-kirchhoff stress structure STVK linearized in all directions       
-           Tensor<2,dim> piola_kirchhoff_stress_structure_STVK_LinALL;
-           piola_kirchhoff_stress_structure_STVK_LinALL =  lame_coefficient_lambda * 1.0/(g_growth) * F_LinU * tr_E * Identity 
-                                                        + lame_coefficient_lambda * 1.0/(g_growth) * F * tr_E_LinU * Identity
-                                                        + 2 * lame_coefficient_mu * 1.0/(g_growth) *  (F_LinU * E + F * E_LinU);
+          // Tensor<2,dim> piola_kirchhoff_stress_structure_STVK_LinALL;
+          // piola_kirchhoff_stress_structure_STVK_LinALL =  lame_coefficient_lambda * 1.0/(g_growth) * F_LinU * tr_E * Identity 
+          //                                              + lame_coefficient_lambda * 1.0/(g_growth) * F * tr_E_LinU * Identity
+          //                                              + 2 * lame_coefficient_mu * 1.0/(g_growth) *  (F_LinU * E + F * E_LinU);
            
           for (unsigned int j=0; j<dofs_per_cell; ++j)
           {
@@ -1900,26 +1900,29 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
             const unsigned int comp_j = fe.system_to_component_index(j).first; 
             if (comp_j == 0 || comp_j == 1)
             {
-              local_matrix(j,i) += (compute_short_scale * density_structure * phi_i_v[i] * phi_i_v[j] +                  
-                                    timestep * theta * scalar_product( sigma_co_lin, //piola_kirchhoff_stress_structure_STVK_LinALL,
+              local_matrix(j,i) += (//compute_short_scale * density_structure * phi_i_v[i] * phi_i_v[j]                  
+                                    //+ 
+                                    timestep * theta * scalar_product( sigma_co_lin, //piola_kirchhoff_stress_structure_STVK_LinALL + (k*phi_i_c[i]* (K+co) - k* co * phi_i_c[i])/(std::pow((K+co),2.0) ) * Identity,
                                     phi_i_grads_v[j]) 
                                     ) * fe_values.JxW(q);       
             }        
             else if (comp_j == 2 || comp_j == 3)
             {
-              local_matrix(j,i) += (density_structure * alpha_us * 
-                                    (compute_short_scale * phi_i_u[i] * phi_i_u[j] 
-                                      - timestep * theta * phi_i_v[i] * phi_i_u[j]
-                                      - volume_expansion * phi_i_c[i] * phi_i_u[j]   
-                                      )            
-                                    ) *  fe_values.JxW(q);
-
-              /*local_matrix(j,i) += (density_structure * alpha_us * 
+              local_matrix(j,i) +=  (density_structure * alpha_us * 
                                      (//compute_short_scale * phi_i_u[i] * phi_i_u[j] 
                                      - timestep * theta * phi_i_v[i] * phi_i_u[j]
                                      - volume_expansion * phi_i_c[i] * phi_i_u[j]    
                                      )    
-                                    ) *  fe_values.JxW(q);*/
+                                    ) *  fe_values.JxW(q);
+            if( (phi_i_c[i] > 10))
+            {
+              std::cout << "phi*u: " << - timestep * theta * phi_i_v[i] * phi_i_u[j] << std::endl;
+              std::cout << "phi_i_v: " << phi_i_v[i] << std::endl;
+              std::cout << "volume: " << - volume_expansion * phi_i_c[i] * phi_i_u[j] << std::endl;
+              std::cout << "Volume: " << volume_expansion << std::endl;
+              std::cout << "c: " << phi_i_c[i] << std::endl;
+              std::cout << "phi_i_u: " << phi_i_u[j] << std::endl;
+            }
             }
             else if (comp_j == 4)
             {
@@ -1932,7 +1935,7 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
                                     + timestep * ( Ds * phi_i_grads_c[i] ) * phi_i_grads_c[j] 
                                     - timestep * ( (k1 * phi_i_c[i]* (K1+co) -  k1 * co * phi_i_c[i])/(std::pow((K1+co),2.0) ) ) * phi_i_c[j]
                                     //- timestep * ( k * c_n )/(K + c_n) * phi_i_c[i] * phi_i_c[j]
-                                    + is_on_b * ( kd * phi_i_c[i]) * phi_i_c[j]
+                                    + timestep * theta * is_on_b * ( kd * phi_i_c[i]) * phi_i_c[j]
               ) * fe_values.JxW(q); 
               /*if (debug && fe.system_to_component_index(i).first == 5)
               {
@@ -2243,10 +2246,8 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
             //const Tensor<1,dim> phi_i_u = fe_values[displacements].value (i, q);
             const Tensor<2,dim> phi_i_grads_u = fe_values[displacements].gradient (i, q);
 
-            local_rhs(i) -= alpha_u/J * (scalar_product(grad_u, phi_i_grads_u)
-                           // Transport
-                           //+ 1000.0 * v * grad_u * phi_i_u
-                           ) * fe_values.JxW(q);
+            local_rhs(i) -= ( alpha_u/J * scalar_product(grad_u, phi_i_grads_u)
+                              ) * fe_values.JxW(q);
           }  
           else if (comp_i == 4)
           {
@@ -2279,7 +2280,7 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
                               + timestep * theta * convection_c_fluid * phi_i_c
                               - convection_c_fluid_with_u * phi_i_c
                               + convection_c_fluid_with_old_timestep_u * phi_i_c
-                              + is_on_b * kd * co_inv * phi_i_c
+                              + timestep * theta * is_on_b * kd * co_inv * phi_i_c
                               //+ adhesion * phi_i_c
                               //+ timestep * theta * J * grad_co * F_Inverse * v * phi_i_c
                               //+ theta * J * grad_co * F_Inverse * ( u - old_timestep_u ) * phi_i_c 
@@ -2555,8 +2556,7 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
         // STVK structure model
         Tensor<2,dim> sigma_structure_ALE;
         sigma_structure_ALE.clear();
-        sigma_structure_ALE = lame_coefficient_lambda * tr_E * Identity + 2 * lame_coefficient_mu * E
-                               - (k*co)/(K+co) * Identity;
+        sigma_structure_ALE = lame_coefficient_lambda * tr_E * Identity + 2 * lame_coefficient_mu * E - (k*co)/(K+co) * Identity;
         /*(1.0/J *
              F * (lame_coefficient_lambda * 1.0/g_growth * 
             tr_E * Identity +
@@ -2567,7 +2567,7 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
         
         Tensor<2,dim> stress_term;
         stress_term.clear();
-        stress_term = sigma_structure_ALE;//(J * sigma_structure_ALE * F_Inverse_T);
+        stress_term = sigma_structure_ALE;// (J * sigma_structure_ALE * F_Inverse_T);
         
         Tensor<2,dim> old_timestep_sigma_structure_ALE;
         old_timestep_sigma_structure_ALE.clear();
@@ -2613,17 +2613,18 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
             const Tensor<1,dim> phi_i_v = fe_values[velocities].value (i, q);
             const Tensor<2,dim> phi_i_grads_v = fe_values[velocities].gradient (i, q);
           
-            local_rhs(i) -= (compute_short_scale * density_structure * (v - old_timestep_v) * phi_i_v
-                           + timestep * theta * scalar_product(stress_term,phi_i_grads_v) 
-                           //+ timestep * (1.0-theta) * scalar_product(old_timestep_stress_term, phi_i_grads_v) //TODO
+            local_rhs(i) -= (//compute_short_scale * density_structure * (v - old_timestep_v) * phi_i_v 
+                           //+ 
+                           timestep * theta * scalar_product(stress_term,phi_i_grads_v)
+                           //+ timestep * (1.0-theta) * scalar_product(old_timestep_stress_term, phi_i_grads_v)  TODO
                            ) * fe_values.JxW(q);
           }   
           else if (comp_i == 2 || comp_i == 3)
           {
             const Tensor<1,dim> phi_i_u = fe_values[displacements].value (i, q);
             local_rhs(i) -=  (density_structure * alpha_us * 
-            (compute_short_scale * (u - old_timestep_u) * phi_i_u -
-             timestep * (theta * v + (1.0-theta) * 
+            (//compute_short_scale * (u - old_timestep_u) * phi_i_u -
+             -timestep * (theta * v + (1.0-theta) * 
                    old_timestep_v) * phi_i_u)
             ) * fe_values.JxW(q);     
           }
@@ -2641,7 +2642,7 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
                             - timestep * theta * grad_co * v * phi_i_c 
                             + timestep * theta * Ds * grad_co * phi_i_grads_c 
                             - timestep * (k1 * co)/(K1 + co) * phi_i_c
-                            + is_on_b * ka * co_inv * phi_i_c
+                            + timestep * theta * is_on_b * ka * co_inv * phi_i_c
                             //+ timestep * (1-theta) TODO
 
                             ) *  fe_values.JxW(q);
@@ -2696,7 +2697,7 @@ FSI_ALE_Problem<dim>::set_initial_condition( )
 
         if (std::find(dof_indices.begin(), dof_indices.end(), globaler_index) != dof_indices.end())
         {
-            c_initial = (cell->material_id() == 1) ? 10000.0 : 200.0;
+            c_initial = (cell->material_id() == 1) ? 10.0 : 2.0;
             break;
         }
     }
@@ -3520,9 +3521,9 @@ void FSI_ALE_Problem<dim>::run ()
 
     max_no_timesteps = 15000; //250;
     if (timestep_number < 1)
-      timestep = 43200; //5400; //43200;//10800; //21600; //600;
+      timestep = 43200; //3600;//10800;//5400; //43200;//10800; //21600; //600;
     else 
-      timestep = 43200; //5400; //43200;//10800; //21600; //600;//86400.0;
+      timestep = 43200; //3600;//10800; //5400; //43200;//10800; //21600; //600;//86400.0;
 
     //compute_short_scale = 0.0;
     alpha_growth = alpha_growth + gamma_zero * timestep * 1.0/(1.0 + drag/50.0);
