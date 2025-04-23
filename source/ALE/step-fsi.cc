@@ -1485,7 +1485,7 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
 
   FullMatrix<double>   local_matrix (dofs_per_cell, dofs_per_cell);
 
-  std::vector<unsigned int> local_dof_indices (dofs_per_cell); 
+  std::vector<long unsigned int> local_dof_indices (dofs_per_cell); 
     
 
   // Now, we are going to use the 
@@ -1996,7 +1996,7 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
  
   Vector<double>       local_rhs (dofs_per_cell);
 
-  std::vector<unsigned int> local_dof_indices (dofs_per_cell);
+  std::vector<long unsigned int> local_dof_indices (dofs_per_cell);
   
   const FEValuesExtractors::Vector velocities (0);
   const FEValuesExtractors::Vector displacements (dim); 
@@ -3184,7 +3184,7 @@ void FSI_ALE_Problem<dim>::compute_drag_lift_fsi_fluid_tensor()
   const unsigned int dofs_per_cell = fe.dofs_per_cell;
   const unsigned int n_face_q_points = face_quadrature_formula.size();
 
-  std::vector<unsigned int> local_dof_indices (dofs_per_cell);
+  std::vector<long unsigned int> local_dof_indices (dofs_per_cell);
   std::vector<Vector<double> >  face_solution_values (n_face_q_points, 
                   Vector<double> (number_coefficients));
 
@@ -3285,7 +3285,7 @@ void FSI_ALE_Problem<dim>::compute_outflow()
   const unsigned int dofs_per_cell = fe.dofs_per_cell;
   const unsigned int n_face_q_points = face_quadrature_formula.size();
 
-  std::vector<unsigned int> local_dof_indices (dofs_per_cell);
+  std::vector<long unsigned int> local_dof_indices (dofs_per_cell);
   std::vector<Vector<double> >  face_solution_values (n_face_q_points, 
                   Vector<double> (number_coefficients));
 
