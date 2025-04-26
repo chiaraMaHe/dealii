@@ -2730,97 +2730,51 @@ FSI_ALE_Problem<dim>::set_initial_condition( )
   }*/
 }
 
-
-// Here, we impose boundary conditions
-// for the whole system. The fluid inflow 
-// is prescribed by a parabolic profile. The usual
-// structure displacement shall be fixed  
-// at all outer boundaries. Consequently
-// our formulation of the mixed biharmonic equation
-// requires no Dirichlet zero values for the 
-// second displacement variable $w$ (see the
-// standard literature to elasticity and Ciarlet).
-// The pressure variable is not subjected to any
-// Dirichlet boundary conditions and is left free 
-// in this method. Please note, that 
-// the interface between fluid and structure has no
-// physical boundary due to our formulation. Interface
-// conditions are automatically fulfilled: that is 
-// one major advantage of the `monolithic' formulation.
 template <int dim>
 void
-FSI_ALE_Problem<dim>::set_initial_bc (const double time)
-{ 
-  std::map<unsigned int,double> boundary_values;  
-  std::vector<bool> component_mask (number_coefficients, true);
-  // (Scalar) pressure
-  component_mask[dim+dim] = false;  
+FSI_ALE_Problem<dim>::set_initial_bc(const double time)
+{
+  AffineConstraints<double> constraints;
+  constraints.clear();
 
-  // Because of Pressure inflow
-  component_mask[0] = true;
-  component_mask[1] = true;
-  
-  component_mask[dim+dim+1] = true;   //false; 
+  // Erzeuge eine Komponentenauswahl: Verschiebungen (ux, uy) aktiv, Druck nicht
+  ComponentMask displacement_mask(number_coefficients, false);
+  displacement_mask.set(0, true);             // ux
+  displacement_mask.set(1, true);             // uy
+  displacement_mask.set(dim + dim + 1, true); // eventuell weitere Verschiebungskomponente
 
-  VectorTools::interpolate_boundary_values (dof_handler,
-                0,
-                BoundaryParabel<dim>(time, u_y,
-                   compute_short_scale),
-                boundary_values,
-                component_mask); 
+  // Erzeuge eine Maske für alle Komponenten (z.B. feste Struktur)
+  ComponentMask all_components_mask(number_coefficients, true);
+  all_components_mask.set(dim + dim, false); // Druck bleibt frei
 
-  component_mask[0] = true;
-  component_mask[1] = true;
-  component_mask[dim+dim+1] = true;    
-  VectorTools::interpolate_boundary_values (dof_handler,
-                1,
-                BoundaryParabel<dim>(time, u_y,
-                   compute_short_scale),
-                boundary_values,
-                component_mask);    
-    
-  VectorTools::interpolate_boundary_values (dof_handler,
-                                              2,
-                                              /*BoundarySolid<dim>(),
-                                              boundary_values,
-                                              component_mask);*/
-                dealii::Functions::ZeroFunction<dim>(number_coefficients),  
-                                              boundary_values,
-                                              component_mask);
+  // Setze Inflow-Bedingungen (parabolisch) an Rändern 0 und 1
+  VectorTools::interpolate_boundary_values(
+    dof_handler,
+    0,
+    BoundaryParabel<dim>(time, u_y, compute_short_scale),
+    constraints,
+    displacement_mask);
 
-  VectorTools::interpolate_boundary_values (dof_handler,
-                                              3,
-                                              /*BoundarySolid<dim>(),
-                                              boundary_values,
-                                              component_mask);*/
-                dealii::Functions::ZeroFunction<dim>(number_coefficients),  
-                                              boundary_values,
-                                              component_mask);
- 
-  VectorTools::interpolate_boundary_values (dof_handler,
-                80,
-                /*BoundarySolid<dim>(),
-                                              boundary_values,
-                                              component_mask);*/
-                dealii::Functions::ZeroFunction<dim>(number_coefficients),  
-                boundary_values,
-                component_mask);
-    
-  VectorTools::interpolate_boundary_values (dof_handler,
-                82,
-                /*BoundarySolid<dim>(),
-                                              boundary_values,
-                                              component_mask);*/
-                dealii::Functions::ZeroFunction<dim>(number_coefficients),  
-                boundary_values,
-                component_mask);
-   
-    
-  for (typename std::map<unsigned int, double>::const_iterator
-        i = boundary_values.begin();
-        i != boundary_values.end();
-        ++i)
-    solution(i->first) = i->second; 
+  VectorTools::interpolate_boundary_values(
+    dof_handler,
+    1,
+    BoundaryParabel<dim>(time, u_y, compute_short_scale),
+    constraints,
+    displacement_mask);
+
+  // Struktur fixieren (alle äußeren Ränder)
+  for (const auto boundary_id : {2, 3, 80, 82})
+  {
+    VectorTools::interpolate_boundary_values(
+      dof_handler,
+      boundary_id,
+      Functions::ZeroFunction<dim>(number_coefficients),
+      constraints,
+      all_components_mask);
+  }
+
+  constraints.close();
+  constraints.distribute(solution);
 }
 
 // This function applies boundary conditions 
@@ -2830,66 +2784,54 @@ FSI_ALE_Problem<dim>::set_initial_bc (const double time)
 // conditions, now. 
 template <int dim>
 void
-FSI_ALE_Problem<dim>::set_newton_bc ()
+FSI_ALE_Problem<dim>::set_newton_bc()
 {
-  std::vector<bool> component_mask (number_coefficients, true);
-  component_mask[dim+dim] = false; 
+  // Achtung: constraints müssen von außen schon geöffnet sein!
+  // (meist im Newton-Solver-Setup gemacht)
+  
+  // Maske für Verschiebungen (ux, uy) aktiv, Druck nicht
+  ComponentMask displacement_mask(number_coefficients, false);
+  displacement_mask.set(0, true);             // ux
+  displacement_mask.set(1, true);              // uy
+  displacement_mask.set(dim + dim + 1, true);  // eventuelles weiteres displacement
 
-  component_mask[dim+dim+1] = true; //false; 
+  // Maske für feste Struktur, ohne zusätzliche Bewegungskomponente
+  ComponentMask fixed_structure_mask(number_coefficients, false);
+  fixed_structure_mask.set(0, true);
+  fixed_structure_mask.set(1, true);
+  // dim+dim+1 bleibt false hier
 
-  // Because of Pressure inflow
-  component_mask[0] = true;
-  component_mask[1] = true;      
-  VectorTools::interpolate_boundary_values (dof_handler,
-                0,
-                dealii::Functions::ZeroFunction<dim>(number_coefficients),                                             
-                constraints,
-                component_mask); 
-   
-  component_mask[0] = true;
-  component_mask[1] = true;  
-  component_mask[dim+dim+1] = false;     
+  // ZeroFunction für alle Interpolationen
+  Functions::ZeroFunction<dim> zero_function(number_coefficients);
 
-  VectorTools::interpolate_boundary_values (dof_handler,
-                                              2,
-                dealii::Functions::ZeroFunction<dim>(number_coefficients),  
-                                              constraints,
-                                              component_mask);
+  // Fluid-Einlaufbedingungen: Null-Verschiebung bei Newton-Korrektur auf Rand 0
+  VectorTools::interpolate_boundary_values(
+    dof_handler,
+    0,
+    zero_function,
+    constraints,
+    displacement_mask);
 
-  VectorTools::interpolate_boundary_values (dof_handler,
-                                              7,
-                dealii::Functions::ZeroFunction<dim>(number_coefficients),  
-                                              constraints,
-                                              component_mask);
+  // Struktur-Ränder: Nullbedingungen auf Rand 2, 3, 7, 80, 82
+  for (const auto boundary_id : {2, 3, 7, 80, 82})
+  {
+    VectorTools::interpolate_boundary_values(
+      dof_handler,
+      boundary_id,
+      zero_function,
+      constraints,
+      fixed_structure_mask);
+  }
 
-
-  VectorTools::interpolate_boundary_values (dof_handler,
-                                              3,
-                dealii::Functions::ZeroFunction<dim>(number_coefficients),  
-                                              constraints,
-                                              component_mask);
-
-  VectorTools::interpolate_boundary_values (dof_handler,
-                                              80,
-                dealii::Functions::ZeroFunction<dim>(number_coefficients),  
-                                              constraints,
-                                              component_mask);
-  VectorTools::interpolate_boundary_values (dof_handler,
-                82,
-                dealii::Functions::ZeroFunction<dim>(number_coefficients),  
-                constraints,
-                component_mask);   
-
-  component_mask[0] = false;
-  component_mask[1] = false;
-  component_mask[dim+dim+1] = false;    
-    
-  VectorTools::interpolate_boundary_values (dof_handler,
-                1,
-                dealii::Functions::ZeroFunction<dim>(number_coefficients),  
-                constraints,
-                component_mask);
-}  
+  // Optional: Rand 1 wird speziell behandelt (hier keine Dirichlet-Bedingungen für Verschiebung)
+  ComponentMask no_components(number_coefficients, false); // keine Dirichlet-Bedingung
+  VectorTools::interpolate_boundary_values(
+    dof_handler,
+    1,
+    zero_function,
+    constraints,
+    no_components);
+}
 
 // In this function, we solve the linear systems
 // inside the nonlinear Newton iteration. We only
@@ -3521,9 +3463,9 @@ void FSI_ALE_Problem<dim>::run ()
 
     max_no_timesteps = 15000; //250;
     if (timestep_number < 1)
-      timestep = 43200; //3600;//10800;//5400; //43200;//10800; //21600; //600;
+      timestep = 21600; //3600;//5400; //43200;//10800; //21600; //600;
     else 
-      timestep = 43200; //3600;//10800; //5400; //43200;//10800; //21600; //600;//86400.0;
+      timestep = 21600; //3600;//5400; //43200;//10800; //21600; //600;//86400.0;
 
     //compute_short_scale = 0.0;
     alpha_growth = alpha_growth + gamma_zero * timestep * 1.0/(1.0 + drag/50.0);
