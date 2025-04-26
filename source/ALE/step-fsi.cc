@@ -2737,17 +2737,17 @@ FSI_ALE_Problem<dim>::set_initial_bc(const double time)
   AffineConstraints<double> constraints;
   constraints.clear();
 
-  // Erzeuge eine Komponentenauswahl: Verschiebungen (ux, uy) aktiv, Druck nicht
+  // Verschiebungsmaske (ux, uy) aktiv, Druck bleibt frei
   ComponentMask displacement_mask(number_coefficients, false);
   displacement_mask.set(0, true);             // ux
-  displacement_mask.set(1, true);             // uy
-  displacement_mask.set(dim + dim + 1, true); // eventuell weitere Verschiebungskomponente
+  displacement_mask.set(1, true);              // uy
+  displacement_mask.set(dim + dim + 1, true);  // evtl. w-Komponente
 
-  // Erzeuge eine Maske für alle Komponenten (z.B. feste Struktur)
-  ComponentMask all_components_mask(number_coefficients, true);
-  all_components_mask.set(dim + dim, false); // Druck bleibt frei
+  // Maske für feste Struktur (alle Displacements fixieren, Druck bleibt frei)
+  ComponentMask structure_mask(number_coefficients, true);
+  structure_mask.set(dim + dim, false); // Druck bleibt frei
 
-  // Setze Inflow-Bedingungen (parabolisch) an Rändern 0 und 1
+  // Parabolisches Inflow-Profil auf Rand 0 und 1
   VectorTools::interpolate_boundary_values(
     dof_handler,
     0,
@@ -2762,7 +2762,7 @@ FSI_ALE_Problem<dim>::set_initial_bc(const double time)
     constraints,
     displacement_mask);
 
-  // Struktur fixieren (alle äußeren Ränder)
+  // Feste Struktur auf Rändern 2, 3, 80, 82
   for (const auto boundary_id : {2, 3, 80, 82})
   {
     VectorTools::interpolate_boundary_values(
@@ -2770,7 +2770,7 @@ FSI_ALE_Problem<dim>::set_initial_bc(const double time)
       boundary_id,
       Functions::ZeroFunction<dim>(number_coefficients),
       constraints,
-      all_components_mask);
+      structure_mask);
   }
 
   constraints.close();
@@ -2786,25 +2786,25 @@ template <int dim>
 void
 FSI_ALE_Problem<dim>::set_newton_bc()
 {
-  // Achtung: constraints müssen von außen schon geöffnet sein!
-  // (meist im Newton-Solver-Setup gemacht)
-  
-  // Maske für Verschiebungen (ux, uy) aktiv, Druck nicht
+  // Wichtig: diese constraints müssen VORHER erstellt worden sein im Newton-Setup
+  // (Hier wird NUR ergänzt, nicht ein neuer constraints Container gebaut!)
+
+  // Maske für Verschiebungskorrekturen (ux, uy) aktiv
   ComponentMask displacement_mask(number_coefficients, false);
   displacement_mask.set(0, true);             // ux
   displacement_mask.set(1, true);              // uy
-  displacement_mask.set(dim + dim + 1, true);  // eventuelles weiteres displacement
+  displacement_mask.set(dim + dim + 1, true);  // evtl. w-Komponente
 
-  // Maske für feste Struktur, ohne zusätzliche Bewegungskomponente
-  ComponentMask fixed_structure_mask(number_coefficients, false);
-  fixed_structure_mask.set(0, true);
-  fixed_structure_mask.set(1, true);
-  // dim+dim+1 bleibt false hier
+  // Strukturmaske (fixe Verschiebung, keine Bewegung)
+  ComponentMask structure_mask(number_coefficients, false);
+  structure_mask.set(0, true);
+  structure_mask.set(1, true);
+  // w-Komponente bleibt false
 
-  // ZeroFunction für alle Interpolationen
+  // ZeroFunction für Newton-Korrekturen
   Functions::ZeroFunction<dim> zero_function(number_coefficients);
 
-  // Fluid-Einlaufbedingungen: Null-Verschiebung bei Newton-Korrektur auf Rand 0
+  // Rand 0: Null-Bedingung für Verschiebung
   VectorTools::interpolate_boundary_values(
     dof_handler,
     0,
@@ -2812,7 +2812,7 @@ FSI_ALE_Problem<dim>::set_newton_bc()
     constraints,
     displacement_mask);
 
-  // Struktur-Ränder: Nullbedingungen auf Rand 2, 3, 7, 80, 82
+  // Struktur-Ränder: Null-Bedingung auf 2, 3, 7, 80, 82
   for (const auto boundary_id : {2, 3, 7, 80, 82})
   {
     VectorTools::interpolate_boundary_values(
@@ -2820,11 +2820,11 @@ FSI_ALE_Problem<dim>::set_newton_bc()
       boundary_id,
       zero_function,
       constraints,
-      fixed_structure_mask);
+      structure_mask);
   }
 
-  // Optional: Rand 1 wird speziell behandelt (hier keine Dirichlet-Bedingungen für Verschiebung)
-  ComponentMask no_components(number_coefficients, false); // keine Dirichlet-Bedingung
+  // Rand 1: keine Newton-Bedingung (Option: leere Maske setzen)
+  ComponentMask no_components(number_coefficients, false);
   VectorTools::interpolate_boundary_values(
     dof_handler,
     1,
@@ -2832,6 +2832,7 @@ FSI_ALE_Problem<dim>::set_newton_bc()
     constraints,
     no_components);
 }
+
 
 // In this function, we solve the linear systems
 // inside the nonlinear Newton iteration. We only
