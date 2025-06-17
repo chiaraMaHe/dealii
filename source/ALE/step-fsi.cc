@@ -101,6 +101,7 @@ Die Kopplung ist dann folgendermaßen:
 #include <deal.II/grid/manifold_lib.h>
 #include <deal.II/grid/grid_tools.h>
 #include <deal.II/grid/grid_in.h>
+#include <deal.II/grid/grid_out.h>
 
 #include <deal.II/dofs/dof_handler.h>
 #include <deal.II/dofs/dof_renumbering.h>
@@ -109,6 +110,8 @@ Die Kopplung ist dann folgendermaßen:
 //#include <dofs/dof_constraints.h>
 //#include <deal.II/lac/constraint_matrix.h> // old deal.II versioncell_qp
 #include <deal.II/lac/affine_constraints.h>
+#include <deal.II/grid/grid_refinement.h>
+#include <deal.II/numerics/error_estimator.h>
 
 #include <deal.II/fe/fe_q.h>
 #include <deal.II/fe/fe_dgq.h>
@@ -123,6 +126,11 @@ Die Kopplung ist dann folgendermaßen:
 #include <deal.II/numerics/matrix_tools.h>
 #include <deal.II/numerics/data_out.h>
 #include <deal.II/numerics/solution_transfer.h>
+
+//Debug
+#include <csignal>   // für signal()
+#include <iostream>  // für std::cerr etc.
+#include <cstdlib>   // für std::abort()
 
 
 
@@ -922,6 +930,7 @@ BoundaryParabel<dim>::value (const Point<dim>  &p,
     ExcIndexRange (component, 0, this->n_components));
 
   const long double pi = 3.141592653589793238462643;
+  //std::cout << "boundary" << std::endl;
   
   // The maximum inflow depends on the configuration
   // for the different test cases:
@@ -958,8 +967,6 @@ BoundaryParabel<dim>::value (const Point<dim>  &p,
          sin_tmp * 
          ((beta_inflow + 10.0 * (1.0 -  _u_y)) * (1.0 - p(1)*p(1))) : 0);
 
-      //std::cout <<  _time << "   " << sin_tmp << "   " << total_inflow << std::endl;
-
       return total_inflow;
     }
   }
@@ -977,8 +984,6 @@ BoundaryParabel<dim>::value (const Point<dim>  &p,
       double total_inflow = ( (p(0) == 5) && (p(1) <= 1.0) && (p(1) >= -1.0) ? 2 - inflow * 
          sin_tmp * 
          ((beta_inflow + 10.0 * (1.0 -  _u_y)) * (1.0 - p(1)*p(1))) : 2);
-
-      //std::cout <<  _time << "   " << sin_tmp << "   " << total_inflow << std::endl;
 
       return total_inflow;
     }
@@ -1060,8 +1065,11 @@ private:
   //bool is_at_boundary(unsigned int q_cell, const typename DoFHandler<dim>::active_cell_iterator cell, Point<2> cell_qp, FEFaceValues<dim> fe_face_values);
   void set_runtime_parameters ();
   void setup_system ();
+  void setup_timestep ();
   void assemble_system_matrix ();   
   void assemble_system_rhs ();
+
+  void refine_grid();
   
   void set_initial_condition();
   void set_initial_bc (const double time);
@@ -1133,10 +1141,14 @@ private:
   double cell_diameter;  
   double alpha_u, alpha_us;
   
-  double pressure_fluid_x, alpha_growth;
+  double pressure_fluid_x;
   double stop_growth;
+  double growth_displacement;
   double compute_short_scale, u_y, drag_summed, final_drag_summed, gamma_zero, growth_initial, drag;
  
+  // Neumann
+  double neumann_pressure_x, neumann_pressure_y;
+
   SparseDirectUMFPACK A_direct;
 
   const long double pi = 3.141592653589793238462643;
@@ -1184,8 +1196,7 @@ void FSI_ALE_Problem<dim>::set_runtime_parameters ()
   compute_short_scale = 0.0;
   stop_growth = 1.0e+12;
   pressure_fluid_x = 1.0;
-
-  alpha_growth = 0.0; // 0.02
+  growth_displacement = 1.;
 
   density_fluid = 1.0;
   density_structure = 3*1e+02; 
@@ -1201,9 +1212,9 @@ void FSI_ALE_Problem<dim>::set_runtime_parameters ()
   alpha_us = 1.0;
 
   //Biofilm Concentration coefficients
-  k = 3*1e-2;//3*1e-2; //max Wachstumsgeschwindigkeit
+  k = 3;//*1e-2;//3*1e-2; //max Wachstumsgeschwindigkeit
   K = 3*1e-4; //Halb-Sättigungskonstante - Michaelis-Menten-Konstante 
-  k1 = 1e-4;
+  k1 = 1e-4;//1;//1e-4;
   K1 = 1e-5;
 
   //Nutrients
@@ -1214,12 +1225,16 @@ void FSI_ALE_Problem<dim>::set_runtime_parameters ()
     volume_expansion[i] = 1e-10;
 
   //adhesion, detachment
-  ka = 1e-05;//-1e-02;//-1;//-5*1e-01;//-1e-02;//-1e-01; 
+  ka = 1e-02;//-1e-02;//-1;//-5*1e-01;//-1e-02;//-1e-01; 
   kd = 0;//-1e-05; //6
 
   //Diffusion coefficients
   Df = 2.5 * 1e-06;
   Ds = 2.5 * 1e-09;
+
+  //Neumann
+  neumann_pressure_x    = 0.1;
+  neumann_pressure_y    = 0;
   
   // Timestepping schemes
   //BE, CN, CN_shifted
@@ -1271,7 +1286,7 @@ void FSI_ALE_Problem<dim>::set_runtime_parameters ()
   Assert (dim==2, ExcInternalError());
   grid_in.read_ucd (input_file); 
   
-  triangulation.refine_global (3);
+  triangulation.refine_global (2);
 }
 
 /*template <int dim> 
@@ -1337,8 +1352,6 @@ void FSI_ALE_Problem<dim>::setup_system ()
   {        
     constraints.clear ();
     set_newton_bc ();
-    DoFTools::make_hanging_node_constraints (dof_handler,
-               constraints);
   }
   constraints.close ();
   
@@ -1433,6 +1446,124 @@ void FSI_ALE_Problem<dim>::setup_system ()
   timer.leave_subsection(); 
 }
 
+// This function is similar to many deal.II tutorial steps.
+template <int dim>
+void FSI_ALE_Problem<dim>::setup_timestep ()
+{
+  timer.enter_subsection("Setup timestep.");
+
+  // We set runtime parameters to drive the problem.
+  // These parameters could also be read from a parameter file that
+  // can be handled by the ParameterHandler object (see step-19)
+  //set_runtime_parameters ();
+
+  system_matrix.clear ();
+  
+  //output_results (timestep_number+210000,solution);
+  //dof_handler.distribute_dofs (fe);  
+  //output_results (timestep_number+220000,solution);
+  //DoFRenumbering::Cuthill_McKee (dof_handler);
+
+  //output_results (timestep_number+20000,solution);
+
+  // We are dealing with 8 components for this 
+  // two-dimensional fluid-structure interacion problem
+  // Precisely, we use:
+  // velocity in x and y:                0
+  // structure displacement in x and y:  1
+  // scalar pressure field:              2
+  // additional displacement in x and y: 3
+  // scalar concentration field:         4
+  std::vector<unsigned int> block_component (6,0);
+  block_component[dim] = 1;                     //displacement
+  block_component[dim+1] = 1;                   //displacement
+  block_component[dim+dim] = 2;                 //pressure
+  block_component[dim+dim+1] = 3;           //concentration
+ 
+  DoFRenumbering::component_wise (dof_handler, block_component);
+
+  {        
+    constraints.clear ();
+    set_newton_bc ();
+  }
+  constraints.close ();
+  //output_results (timestep_number+30000,solution);
+  
+  std::vector<unsigned int> dofs_per_block (3);
+  dofs_per_block = DoFTools::count_dofs_per_fe_block (dof_handler, block_component);  
+  const unsigned int n_v = dofs_per_block[0],
+    n_u = dofs_per_block[1],
+    n_p = dofs_per_block[2],
+    n_c = dofs_per_block[3];
+
+  std::cout << "Cells:\t"
+            << triangulation.n_active_cells()
+            << std::endl      
+            << "DoFs:\t"
+            << dof_handler.n_dofs()
+            << " (" << n_v << '+' << n_u << '+' << n_p << '+' << n_c << ')'
+            << std::endl;
+
+
+ //output_results (timestep_number+40000,solution);
+      
+ {
+    BlockDynamicSparsityPattern csp (4,4);
+
+    csp.block(0,0).reinit (n_v, n_v);
+    csp.block(0,1).reinit (n_v, n_u);
+    csp.block(0,2).reinit (n_v, n_p);
+    csp.block(0,3).reinit (n_v, n_c);
+  
+    csp.block(1,0).reinit (n_u, n_v);
+    csp.block(1,1).reinit (n_u, n_u);
+    csp.block(1,2).reinit (n_u, n_p);
+    csp.block(1,3).reinit (n_u, n_c);
+  
+    csp.block(2,0).reinit (n_p, n_v);
+    csp.block(2,1).reinit (n_p, n_u);
+    csp.block(2,2).reinit (n_p, n_p);
+    csp.block(2,3).reinit (n_p, n_c);
+
+    csp.block(3,0).reinit (n_c, n_v);
+    csp.block(3,1).reinit (n_c, n_u);
+    csp.block(3,2).reinit (n_c, n_p);
+    csp.block(3,3).reinit (n_c, n_c);
+ 
+    csp.collect_sizes();    
+  
+
+    DoFTools::make_sparsity_pattern (dof_handler, csp, constraints, false);
+
+    sparsity_pattern.copy_from (csp);
+  }
+  //output_results (timestep_number+40000,solution);
+ 
+  system_matrix.reinit (sparsity_pattern);
+  //output_results (timestep_number+50000,solution);
+
+  // Updates for Newton's method
+  newton_update.reinit (4);
+  newton_update.block(0).reinit (n_v);
+  newton_update.block(1).reinit (n_u);
+  newton_update.block(2).reinit (n_p);
+  newton_update.block(3).reinit (n_c);
+ 
+  newton_update.collect_sizes ();
+ 
+  // Residual for  Newton's method
+  system_rhs.reinit (4);
+  system_rhs.block(0).reinit (n_v);
+  system_rhs.block(1).reinit (n_u);
+  system_rhs.block(2).reinit (n_p);
+  system_rhs.block(3).reinit (n_c);
+
+  system_rhs.collect_sizes ();
+  //output_results (timestep_number+60000,solution);
+
+  timer.leave_subsection(); 
+}
+
 
 // In this function, we assemble the Jacobian matrix
 // for the Newton iteration. The fluid and the structure 
@@ -1462,6 +1593,29 @@ template <int dim>
 void FSI_ALE_Problem<dim>::assemble_system_matrix ()
 {
   timer.enter_subsection("Assemble Matrix.");
+
+  /*std::vector<types::global_dof_index> dofs_per_block(fe.n_blocks());
+  DoFTools::count_dofs_per_fe_block(dof_handler, dofs_per_block);
+
+  // BlockSparsityPattern erzeugen
+  BlockDynamicSparsityPattern dsp(fe.n_blocks(), fe.n_blocks());
+  for (unsigned int i = 0; i < fe.n_blocks(); ++i)
+    for (unsigned int j = 0; j < fe.n_blocks(); ++j)
+      dsp.block(i, j).reinit(dofs_per_block[i], dofs_per_block[j]);
+  dsp.collect_sizes();
+
+  // Sparsity pattern erstellen
+  DoFTools::make_sparsity_pattern(dof_handler, dsp, constraints, false);
+
+  // Matrix initialisieren
+  sparsity_pattern.copy_from(dsp);
+  system_matrix.reinit(sparsity_pattern);
+
+  solution.reinit(dofs_per_block);
+  system_rhs.reinit(dofs_per_block);*/
+
+
+
   system_matrix=0;
      
   QGauss<dim>   quadrature_formula(degree+2);  
@@ -1472,6 +1626,12 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
                            update_quadrature_points  |
                            update_JxW_values |
                            update_gradients);
+
+  FESubfaceValues<dim> fe_face_values_neighbor( fe,
+                                          face_quadrature_formula,
+                                          update_values         | update_quadrature_points  |
+                                          update_normal_vectors | update_gradients |
+                                          update_JxW_values);
   
   FEFaceValues<dim> fe_face_values (fe, face_quadrature_formula, 
             update_values         | update_quadrature_points  |
@@ -1485,7 +1645,7 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
 
   FullMatrix<double>   local_matrix (dofs_per_cell, dofs_per_cell);
 
-  std::vector<long unsigned int> local_dof_indices (dofs_per_cell); 
+  std::vector<unsigned int> local_dof_indices (dofs_per_cell); 
     
 
   // Now, we are going to use the 
@@ -1569,7 +1729,7 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
     fe_values.get_function_values (old_timestep_solution, old_timestep_solution_values);
     fe_values.get_function_gradients (old_timestep_solution, old_timestep_solution_grads);
 
-    for (unsigned int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
+    /*for (unsigned int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
     {
       if (cell->neighbor_index(face) != -1)     
       {
@@ -1579,7 +1739,7 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
           fe_face_values.get_function_values (old_timestep_solution, old_timestep_solution_values_inv);
         }
       }
-    }
+    }*/
     // Next, we run over all cells for the fluid equations
     if (cell->material_id() == 0)
     {
@@ -1599,14 +1759,14 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
         int is_on_b = 0;
         interface_check = fe_values.get_quadrature().point(q)[1];
 
-        /*if( interface_check - 0.887298 < 1e-06 && interface_check - 0.887298 > -1e-06 )
+        if( interface_check - 0.887298 < 1e-06 && interface_check - 0.887298 > -1e-06 )
         {
           is_on_b = 1;
         }
-        else*/ if (  interface_check - 0.112702 < 1e-06 && interface_check - 0.112702 > -1e-06 )
+        else if (  interface_check - 0.112702 < 1e-06 && interface_check - 0.112702 > -1e-06 )
         {
           is_on_b = 1;
-        }
+        } //adhesion/attachement
 
         // We build values, vectors, and tensors
         // from information of the previous Newton step. These are introduced 
@@ -1626,7 +1786,7 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
         const Tensor<2,dim> F_Inverse = ALE_Transformations::get_F_Inverse<dim> (F);
         const Tensor<2,dim> F_Inverse_T = ALE_Transformations::get_F_Inverse_T<dim> (F_Inverse);
         const double J = ALE_Transformations::get_J<dim> (F);
-        double co_inv = 0;
+        //double co_inv = 0; //adhesion/attachement
         
         // Stress tensor for the fluid in ALE notation        
         const Tensor<2,dim> sigma_ALE = NSE_in_ALE::get_stress_fluid_ALE<dim> (density_fluid, viscosity, pI, grad_v, grad_v_T, F_Inverse, F_Inverse_T );
@@ -1821,29 +1981,14 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
        
         int is_on_b = 0;
         interface_check = fe_values.get_quadrature().point(q)[1];
-        /*if( interface_check - 0.887298 < 1e-06 && interface_check - 0.887298 > -1e-06 )
+        if( interface_check - 0.887298 < 1e-06 && interface_check - 0.887298 > -1e-06 )
         {
           is_on_b = 1;
         }
-        else */if (  interface_check - 0.112702 < 1e-06 && interface_check - 0.112702 > -1e-06 )
+        else if (  interface_check - 0.112702 < 1e-06 && interface_check - 0.112702 > -1e-06 )
         {
           is_on_b = 1;
         }
-        // Wachstum
-        //double g_growth = 1.0 * (1.0 + 0.01 * time);
-        double g_growth = 0.0;
-        if ((std::abs(fe_values.quadrature_point(q)[1]) > 1.0) && (time <=stop_growth))
-        {
-          g_growth = 1.0 + alpha_growth * 
-                    std::exp(-fe_values.quadrature_point(q)[0] * fe_values.quadrature_point(q)[0])
-                    * (2.0 - std::abs(fe_values.quadrature_point(q)[1]));
-        }
-        else if ((std::abs(fe_values.quadrature_point(q)[1]) > 1.0) && (time > stop_growth))
-        {
-          abort();
-        }
-        else 
-          g_growth = 1.0;
 
         // It is here the same as already shown for the fluid equations.
         // First, we prepare things coming from the previous Newton
@@ -1859,8 +2004,6 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
         //const Tensor<2,dim> F_Inverse_T = ALE_Transformations::get_F_Inverse_T<dim> (F_Inverse); 
         const Tensor<2,dim> F_T = ALE_Transformations::get_F_T<dim> (F);
         const double J = ALE_Transformations::get_J<dim> (F);
-        const Tensor<2,dim> E = Structure_Terms_in_ALE ::get_E<dim> (F_T, F, Identity, g_growth);
-        const double tr_E = Structure_Terms_in_ALE::get_tr_E<dim> (E);
 
         // ... and then things coming from the previous time steps
         //const Tensor<1,dim> old_timestep_v = ALE_Transformations::get_v<dim> (q, old_timestep_solution_values);
@@ -1877,14 +2020,42 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
           const Tensor<2,dim> F_Inverse_T_LinU = transpose(F_Inverse_LinU);
           //const Tensor<2,dim> J_F_Inverse_T_LinU = ALE_Transformations::get_J_F_Inverse_T_LinU<dim> (phi_i_grads_u[i]);
           //const Tensor<1,dim> accelaration_term_LinAll = NSE_in_ALE::get_accelaration_term_LinAll (phi_i_v[i], v, old_timestep_v, J_LinU, J, old_timestep_J, density_structure);
-             
+          double old_timestep_co = ALE_Transformations::get_co<dim> (q, old_timestep_solution_values);        
+
+          // Wachstum
+          //double g_growth = 1.0 * (1.0 + 0.01 * time);
+          double g_growth = 0.0;
+          if ((std::abs(fe_values.quadrature_point(q)[1]) > 1.0) && fe_values.quadrature_point(q)[1] > 0 && (time <=stop_growth))
+          {
+            g_growth = 1.0 + 1e-02 * old_timestep_co *
+                      std::exp(-(fe_values.quadrature_point(q)[0]-growth_displacement) * (fe_values.quadrature_point(q)[0]- growth_displacement))
+                      * (2.0 - std::abs(fe_values.quadrature_point(q)[1]));
+          }
+          else if ((std::abs(fe_values.quadrature_point(q)[1]) > 1.0) && fe_values.quadrature_point(q)[1] > 0 && (time <=stop_growth))
+          {
+            g_growth = 1.0 + 1e-02 * old_timestep_co *
+                      std::exp(-(fe_values.quadrature_point(q)[0]+growth_displacement) * (fe_values.quadrature_point(q)[0]+ growth_displacement))
+                      * (2.0 - std::abs(fe_values.quadrature_point(q)[1]));
+          }
+          else if ((std::abs(fe_values.quadrature_point(q)[1]) > 1.0) && (time > stop_growth))
+          {
+            abort();
+          }
+          else 
+            g_growth = 1.0;
+
           // STVK: Green-Lagrange strain tensor derivatives
-          const Tensor<2,dim> E_LinU = 0.5 * 1.0/(g_growth * g_growth) * (transpose(F_LinU) * F + transpose(F) * F_LinU);
-          const double tr_E_LinU = 1.0/(g_growth * g_growth) * Structure_Terms_in_ALE::get_tr_E_LinU<dim> (q,old_solution_grads, phi_i_grads_u[i]);
+          const Tensor<2,dim> E = Structure_Terms_in_ALE ::get_E<dim> (F_T, F, Identity, g_growth);
+          const double tr_E = Structure_Terms_in_ALE::get_tr_E<dim> (E);
+          
+          const Tensor<2,dim> E_Lin_All = // -(g_growth_Lin * F_T * F)/(g_growth*g_growth*g_growth)
+                                        + 0.5 * 1.0/(g_growth * g_growth) * (transpose(F_LinU) * F + transpose(F) * F_LinU);
+          //const Tensor<2,dim> E_LinU = 0.5 * 1.0/(g_growth * g_growth) * (transpose(F_LinU) * F + transpose(F) * F_LinU);
+          const double tr_E_Lin_All = trace(E_Lin_All);//(-g_growth_Lin)/(g_growth * g_growth * g_growth) * Structure_Terms_in_ALE::get_tr_E_LinU<dim> (q,old_solution_grads, phi_i_grads_u[i]);
 
           //sym( lambda * tr(E) * I + 2mu * E + R_s (c) * I )
-          Tensor<2,dim> sigma_co_lin = lame_coefficient_lambda * tr_E_LinU * Identity
-                                  + 2 * lame_coefficient_mu * E_LinU 
+          Tensor<2,dim> sigma_co_lin = lame_coefficient_lambda * tr_E_Lin_All * Identity
+                                  + 2 * lame_coefficient_mu * E_Lin_All ;
                                   - ( (k*phi_i_c[i]* (K+co) - k*co * phi_i_c[i])/(std::pow((K+co),2.0) ) ) * Identity;
         
           // STVK
@@ -1914,15 +2085,6 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
                                      - volume_expansion * phi_i_c[i] * phi_i_u[j]    
                                      )    
                                     ) *  fe_values.JxW(q);
-            if( (phi_i_c[i] > 10))
-            {
-              std::cout << "phi*u: " << - timestep * theta * phi_i_v[i] * phi_i_u[j] << std::endl;
-              std::cout << "phi_i_v: " << phi_i_v[i] << std::endl;
-              std::cout << "volume: " << - volume_expansion * phi_i_c[i] * phi_i_u[j] << std::endl;
-              std::cout << "Volume: " << volume_expansion << std::endl;
-              std::cout << "c: " << phi_i_c[i] << std::endl;
-              std::cout << "phi_i_u: " << phi_i_u[j] << std::endl;
-            }
             }
             else if (comp_j == 4)
             {
@@ -1937,6 +2099,8 @@ void FSI_ALE_Problem<dim>::assemble_system_matrix ()
                                     //- timestep * ( k * c_n )/(K + c_n) * phi_i_c[i] * phi_i_c[j]
                                     + timestep * theta * is_on_b * ( kd * phi_i_c[i]) * phi_i_c[j]
               ) * fe_values.JxW(q); 
+              //if (phi_i_c[j] != 0)
+              //  std::cout << "phi_i_c: " << phi_i_c[j] << std::endl;
               /*if (debug && fe.system_to_component_index(i).first == 5)
               {
                 //for( int l=0; l<dofs_per_cell; l++ )
@@ -1984,6 +2148,12 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
                            update_JxW_values |
                            update_gradients);
 
+  FESubfaceValues<dim> fe_face_values_neighbor( fe,
+                                          face_quadrature_formula,
+                                          update_values         | update_quadrature_points  |
+                                          update_normal_vectors | update_gradients |
+                                          update_JxW_values);
+
   FEFaceValues<dim> fe_face_values (fe, face_quadrature_formula, 
             update_values         | update_quadrature_points  |
             update_normal_vectors | update_gradients |
@@ -1996,7 +2166,7 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
  
   Vector<double>       local_rhs (dofs_per_cell);
 
-  std::vector<long unsigned int> local_dof_indices (dofs_per_cell);
+  std::vector<unsigned int> local_dof_indices (dofs_per_cell);
   
   const FEValuesExtractors::Vector velocities (0);
   const FEValuesExtractors::Vector displacements (dim); 
@@ -2017,6 +2187,8 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
         cell = dof_handler.begin_active(),
         endc = dof_handler.end();
 
+        int i = 0;
+        int j = 0;
   for (; cell!=endc; ++cell)
   { 
     fe_values.reinit (cell);   
@@ -2031,19 +2203,79 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
     // old timestep iteration
     fe_values.get_function_values (old_timestep_solution, old_timestep_solution_values);
     fe_values.get_function_gradients (old_timestep_solution, old_timestep_solution_grads);
-
+    
     for (unsigned int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
     {
-      if (cell->neighbor_index(face) != -1)     
-      {
-        if (cell->material_id() !=  cell->neighbor(face)->material_id()) //interface //face ->id face
+      //std::cout << "for: " << face << std::endl;
+      //if (cell->neighbor_index(face) != -1)     //adhesion/attachement
+      //{ //adhesion/attachement
+        /*const auto neighbor = cell->neighbor(face);
+
+        // material change
+        if (cell->material_id() != neighbor->material_id())
         {
-          fe_values.reinit (cell->neighbor(face));
-          fe_values.get_function_values (old_timestep_solution, old_timestep_solution_values_inv);
-        }
-      }
+          if (neighbor->is_active())
+          {
+            //std::cout << "active" << std::endl;
+            // use directly
+            fe_values.reinit(neighbor);
+            fe_values.get_function_values(old_timestep_solution, old_timestep_solution_values_inv);
+          }
+          else
+          {*/
+            /*//std::cout << "not active" << std::endl;
+            // refined
+            const unsigned int n_subfaces = cell->face(face)->n_children();
+
+            for (unsigned int sub = 0; sub < cell->face(face)->n_children(); ++sub)
+            {
+              auto neighbor_child = cell->neighbor_child_on_subface(face, sub);
+              if (neighbor_child.state() != IteratorState::valid)
+                continue;
+
+              //std::cout << "1" << std::endl;
+              Assert(number_coefficients == fe.n_components(),
+              ExcMessage("number_coefficients passt nicht zum FiniteElement"));
+
+              if (neighbor_child->is_active())
+              {
+                  try
+                  {
+                      const FiniteElement<dim> &local_fe = neighbor_child->get_fe();
+
+                      FEValues<dim> local_fe_values(local_fe,
+                                                    quadrature_formula,
+                                                    update_values | update_quadrature_points |
+                                                    update_JxW_values | update_gradients);
+
+                      local_fe_values.reinit(neighbor_child);
+
+                      AssertThrow(old_timestep_solution.size() == dof_handler.n_dofs(),
+                                  ExcMessage("Länge von old_timestep_solution passt nicht zu DoFHandler"));
+
+                      AssertThrow(local_fe_values.dofs_per_cell <= dof_handler.get_fe().dofs_per_cell,
+                                  ExcMessage("FE auf Nachbarzelle erwartet mehr DoFs als erlaubt"));
+
+                      const unsigned int n_local_q_points = local_fe_values.get_quadrature().size();
+                      const unsigned int n_local_components = local_fe.n_components();
+
+                      std::vector<Vector<double>> local_solution_values(n_local_q_points, Vector<double>(n_local_components));
+
+                      local_fe_values.get_function_values(old_timestep_solution, local_solution_values);
+                  }
+                  catch (const std::exception &e)
+                  {
+                      std::cerr << "Exception in neighbor_child get_function_values: " << e.what() << std::endl;
+                  }
+              }*///adhesion/attachement
+              fe_values.get_function_values(old_timestep_solution, old_timestep_solution_values); 
+            //}
+          //}
+        //}
+      //}
     }
       
+    //-std::cout << "1" << std::endl;
     // Again, material_id == 0 corresponds to 
     // the domain for fluid equations
     if (cell->material_id() == 0)
@@ -2054,7 +2286,7 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
         double interface_check_x = 0;
         double interface_check_y = 0;
         double co_inv = 0;
-        for (int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
+        /*for (int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
         {
           if (cell->neighbor_index(face) != -1)  
           {
@@ -2072,7 +2304,7 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
                 const typename DoFHandler<dim>::active_cell_iterator n_cell = cell->neighbor(face);
                 for( int q_cell=0; q_cell<n_q_points; q_cell++ )
                 {
-                  //iterieren ueber q punkte -> prufen, ob quadraturpunkt auf altem liegt
+                  //iterieren ueber q Punkte -> pruefen, ob Quadraturpunkt auf Altem liegt
                   if( interface_check_x - fe_values.get_quadrature().point(q)[0] < 1e-06 && interface_check_x - fe_values.get_quadrature().point(q)[0] > -1e-06 
                       || interface_check_y - fe_values.get_quadrature().point(q)[1] < 1e-06 && interface_check_y - fe_values.get_quadrature().point(q)[1] > -1e-06 )
                     co_inv = ALE_Transformations::get_co<dim> (q_cell, old_timestep_solution_values_inv);
@@ -2080,8 +2312,9 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
               }
             }
           }
-        }
+        }*/  //adhesion/attachement
 
+        //std::cout << "2" << q << std::endl;
         const double co = ALE_Transformations::get_co<dim> (q, old_solution_values);
         const Tensor<2,dim> pI = ALE_Transformations::get_pI<dim> (q, old_solution_values);
         const Tensor<1,dim> v = ALE_Transformations::get_v<dim> (q, old_solution_values);
@@ -2169,6 +2402,7 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
             convection_c_fluid += J * (grad_co[l] * F_Inverse[l][m] * v[m]);
           }
         }
+        //std::cout << "3" << std::endl;
 
         //convection_c_fluid = J * (grad_co * F_Inverse * v);
         double convection_c_fluid_with_u = 0;
@@ -2199,8 +2433,8 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
 
         interface_check_x = 0;
         interface_check_y = 0;
-        co_inv = 0;
-        for (int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
+        co_inv = 0; 
+        /*for (int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
         {
           if (cell->neighbor_index(face) != -1)  
           {
@@ -2217,7 +2451,7 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
               }
             }
           }
-        }
+        }*/ //adhesion/attachement
       
         for (unsigned int i=0; i<dofs_per_cell; ++i)
         {
@@ -2256,20 +2490,37 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
           } 
           else if (comp_i == 5)
           {
-            double adhesion = 0;
-            std::vector<double>         phi_i_c_inv(fe.n_dofs_per_face());   
+            //double adhesion = 0;
+            //std::vector<double>         phi_i_c_inv(fe.n_dofs_per_face());   
             for (unsigned int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
             {
-              /*if (cell->neighbor_index(face) != -1)  
+              if (cell->at_boundary(face))
+                continue;
+              
+
+              if (cell->face(face)->has_children())
               {
-                if (cell->material_id() !=  cell->neighbor(face)->material_id())
+                for (unsigned int subface = 0; subface < cell->face(face)->n_children(); ++subface)
                 {
-                  //if () TODO: wenn q auf dieser face liegt -> q to ID
-                    co_inv = ALE_Transformations::get_co<dim> (0, old_timestep_solution_values_inv); //0 ersetzen mit richtiger ID
-                    //phi_i_c_inv[0] = fe_values[concentration].value (0, q); //0er ersetzen mit richtiger ID
-                    adhesion += ( kd * co - kd * co_inv );
+                    const auto neighbor_child = cell->neighbor_child_on_subface(face, subface);
+
+                    // Jetzt: cell und neighbor_child bilden ein Interface
+
+                    // Voraussetzung: Materialunterschied (fluid ↔ solid)
+                    if ( cell->material_id() != neighbor_child->material_id() )
+                    {
+                      is_on_b = 1.;
+                      continue;
+                    }
+
+                    fe_face_values_neighbor.reinit(neighbor_child, neighbor_child->neighbor_of_neighbor(face), 0);
+
+                    for (unsigned int q = 0; q < fe_face_values_neighbor.n_quadrature_points; ++q)
+                    {  
+                      co_inv = fe_face_values_neighbor.shape_value(i, q); 
+                    }
                 }
-              }*/
+              }
             }
 
             const double phi_i_c = fe_values[concentration].value (i, q);
@@ -2288,6 +2539,40 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
           }
         } // end i dofs   
       } // close n_q_points  
+
+      // Pressure Neumann conditions on inflow boundary
+      for (unsigned int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
+      {
+        if (cell->face(face)->at_boundary() && (cell->face(face)->boundary_id() == 0) )
+        {
+          fe_face_values.reinit (cell, face);
+      
+          //fe_face_values.get_function_values (solution, old_solution_face_values);
+          //fe_face_values.get_function_values (old_timestep_solution, old_timestep_solution_face_values);
+        
+       
+          for (unsigned int q=0; q<n_face_q_points; ++q)
+          { 
+            Tensor<1,dim> neumann_value;
+            neumann_value[0] = neumann_pressure_x;
+            neumann_value[1] = neumann_pressure_y;
+          
+            //double fluid_pressure = old_timestep_solution_face_values[q](dim+dim);
+
+            for (unsigned int i=0; i<dofs_per_cell; ++i)
+            {
+              const unsigned int comp_i = fe.system_to_component_index(i).first; 
+              if (comp_i == 0 || comp_i == 1)
+              {  
+                local_rhs(i) +=  (timestep * neumann_value * fe_face_values[velocities].value (i, q)       
+                    ) * fe_face_values.JxW(q);             
+              }
+            // end i
+            }  
+          // end face_n_q_points    
+          }                                     
+        } 
+      }  // end face integrals
                 
       // As already discussed in the assembling method for the matrix,
       // we have to integrate some terms on the outflow boundary:
@@ -2429,8 +2714,7 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
             pI_inflow[0][0] = -0.0 * (1.0 - 1.0*std::cos(0.1*pi*time)); //-pressure_fluid_x;
             pI_inflow[1][1] = -0.0 * (1.0 - 1.0*std::cos(0.1*pi*time));//-pressure_fluid_x;
 
-
-            const Tensor<1,dim> neumann_value_stress = (stress_fluid_transposed_part * fe_face_values.normal_vector(q));         
+            const Tensor<1,dim> neumann_value_stress = (stress_fluid_transposed_part * fe_face_values.normal_vector(q));
             const Tensor<1,dim> neumann_value = (pI_inflow * fe_face_values.normal_vector(q));
 
             //Concentration
@@ -2452,11 +2736,6 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
                                 //fe_face_values[velocities].value (i, q)
                                 ) * fe_face_values.JxW(q);            
               }
-              //else if (comp_i == 7)
-              //{
-              //  local_rhs(i) += -1*co*v*fe_face_values.normal_vector(q) * fe_face_values[concentration].value (i, q)
-              //                  + Ds * grad_co * fe_face_values.normal_vector(q) * fe_face_values[concentration].value (i, q); //TODO gradient
-              //}
             } // end i
           } // end face_n_q_points                                      
         } 
@@ -2477,8 +2756,8 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
         int is_on_b = 0;
         double interface_check_x = 0;
         double interface_check_y = 0;
-        double co_inv = 0;
-        for (int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
+        double co_inv = 0; //adhesion/attachement
+        /*for (int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
         {
           if (cell->neighbor_index(face) != -1)  
           {
@@ -2504,22 +2783,7 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
               }
             }
           }
-        }
-        // Growth
-        //double g_growth = 1.0 * (1.0 + 0.01 * time);
-        double g_growth = 0.0;
-        if ((std::abs(fe_values.quadrature_point(q)[1]) > 1.0) && (time <=stop_growth))
-        {
-          g_growth = 1.0 + alpha_growth * 
-                    std::exp(-fe_values.quadrature_point(q)[0] * fe_values.quadrature_point(q)[0])
-                    * (2.0 - std::abs(fe_values.quadrature_point(q)[1]));
-        }
-        else if ((std::abs(fe_values.quadrature_point(q)[1]) > 1.0) && (time > stop_growth))
-        {
-          abort();
-        }
-        else 
-          g_growth = 1.0;
+        } */ //adhesion/attachement
 
         const double co = ALE_Transformations::get_co<dim> (q, old_solution_values);
         //const Tensor<2,dim> pI = ALE_Transformations::get_pI<dim> (q, old_solution_values);
@@ -2535,8 +2799,6 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
         const Tensor<2,dim> F_Inverse = ALE_Transformations::get_F_Inverse<dim> (F);
         const Tensor<2,dim> F_Inverse_T = ALE_Transformations::get_F_Inverse_T<dim> (F_Inverse);
         const double J = ALE_Transformations::get_J<dim> (F);
-        const Tensor<2,dim> E = Structure_Terms_in_ALE::get_E<dim> (F_T, F, Identity, g_growth);
-        const double tr_E = Structure_Terms_in_ALE::get_tr_E<dim> (E);
         
         // Previous time step values
         //const Tensor<2,dim> old_timestep_pI = ALE_Transformations::get_pI<dim> (q, old_timestep_solution_values);
@@ -2550,13 +2812,42 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
         const Tensor<2,dim> old_timestep_F_T = ALE_Transformations::get_F_T<dim> (old_timestep_F);
         const Tensor<2,dim> old_timestep_F_Inverse_T = ALE_Transformations::get_F_Inverse_T<dim> (old_timestep_F_Inverse);
         const double old_timestep_J = ALE_Transformations::get_J<dim> (old_timestep_F);
+        
+        // Growth
+        //double g_growth = 1.0 * (1.0 + 0.01 * time);
+        double g_growth = 0.0;
+        if ((std::abs(fe_values.quadrature_point(q)[1]) > 1.0) && fe_values.quadrature_point(q)[1] > 0 && (time <=stop_growth))
+        {
+          g_growth = 1.0 + 1e-02 * old_timestep_co * 
+                    std::exp(-(fe_values.quadrature_point(q)[0]-growth_displacement) * (fe_values.quadrature_point(q)[0]-growth_displacement))
+                    * (2.0 - std::abs(fe_values.quadrature_point(q)[1]));
+        }
+        else if ((std::abs(fe_values.quadrature_point(q)[1]) > 1.0) && fe_values.quadrature_point(q)[1] < 0 && (time <=stop_growth))
+        {
+          g_growth = 1.0 + 1e-02 * old_timestep_co * 
+                    std::exp(-(fe_values.quadrature_point(q)[0]+growth_displacement) * (fe_values.quadrature_point(q)[0]+growth_displacement))
+                    * (2.0 - std::abs(fe_values.quadrature_point(q)[1]));
+        }
+        else if ((std::abs(fe_values.quadrature_point(q)[1]) > 1.0) && (time > stop_growth))
+        {
+          abort();
+        }
+        else 
+          g_growth = 1.0;
+
+
+        const Tensor<2,dim> E = Structure_Terms_in_ALE::get_E<dim> (F_T, F, Identity, g_growth);
+        const double tr_E = Structure_Terms_in_ALE::get_tr_E<dim> (E);
+
         const Tensor<2,dim> old_timestep_E = Structure_Terms_in_ALE::get_E<dim> (old_timestep_F_T, old_timestep_F, Identity, g_growth);
         const double old_timestep_tr_E = Structure_Terms_in_ALE::get_tr_E<dim> (old_timestep_E);
-        
+
         // STVK structure model
         Tensor<2,dim> sigma_structure_ALE;
         sigma_structure_ALE.clear();
-        sigma_structure_ALE = lame_coefficient_lambda * tr_E * Identity + 2 * lame_coefficient_mu * E - (k*co)/(K+co) * Identity;
+        sigma_structure_ALE = lame_coefficient_lambda * tr_E * Identity 
+                              + 2 * lame_coefficient_mu * E ;
+                              - (k*co)/(K+co) * Identity;
         /*(1.0/J *
              F * (lame_coefficient_lambda * 1.0/g_growth * 
             tr_E * Identity +
@@ -2581,7 +2872,7 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
         is_on_b = 0;
         interface_check_x = 0;
         interface_check_y = 0;
-        for (int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
+        /*for (int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
         {
           if (cell->neighbor_index(face) != -1)  
           {
@@ -2598,7 +2889,7 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
               }
             }
           }
-        }
+        }*/ 
         
         Tensor<2,dim> old_timestep_stress_term;
         old_timestep_stress_term.clear();
@@ -2637,6 +2928,36 @@ FSI_ALE_Problem<dim>::assemble_system_rhs ()
           {
             const double phi_i_c = fe_values[concentration].value (i, q);
             const Tensor<1,dim> phi_i_grads_c = fe_values[concentration].gradient (i, q);
+
+            for (unsigned int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
+            {
+              if (cell->at_boundary(face))
+                continue;
+
+              if (cell->face(face)->has_children())
+              {
+                for (unsigned int subface = 0; subface < cell->face(face)->n_children(); ++subface)
+                {
+                    const auto neighbor_child = cell->neighbor_child_on_subface(face, subface);
+
+                    // Jetzt: cell und neighbor_child bilden ein Interface
+
+                    // Voraussetzung: Materialunterschied (fluid ↔ solid)
+                    if ( cell->material_id() != neighbor_child->material_id() )
+                    {
+                      is_on_b = 1.;
+                      continue;
+                    }
+
+                    fe_face_values_neighbor.reinit(neighbor_child, neighbor_child->neighbor_of_neighbor(face), 0);
+
+                    for (unsigned int q = 0; q < fe_face_values_neighbor.n_quadrature_points; ++q)
+                    {  
+                      co_inv = fe_face_values_neighbor.shape_value(i, q); 
+                    }
+                }
+              }
+            }
           
             local_rhs(i) -= ( compute_short_scale * (co - old_timestep_co) * phi_i_c
                             - timestep * theta * grad_co * v * phi_i_c 
@@ -2675,7 +2996,7 @@ FSI_ALE_Problem<dim>::set_initial_condition( )
         
   //std::vector<types::global_dof_index> local_dof_indices(fe.n_dofs_per_cell());
   //cell->get_dof_indices(local_dof_indices);
-  const unsigned int block = 3;  // Gewünschter Block
+  const unsigned int block = 3;  // Gewünschter Block -> concentration
 
   for (unsigned int i = 0; i < solution.block(block).size(); ++i)//, ++cell)
   {
@@ -2730,51 +3051,98 @@ FSI_ALE_Problem<dim>::set_initial_condition( )
   }*/
 }
 
+
+// Here, we impose boundary conditions
+// for the whole system. The fluid inflow 
+// is prescribed by a parabolic profile. The usual
+// structure displacement shall be fixed  
+// at all outer boundaries. Consequently
+// our formulation of the mixed biharmonic equation
+// requires no Dirichlet zero values for the 
+// second displacement variable $w$ (see the
+// standard literature to elasticity and Ciarlet).
+// The pressure variable is not subjected to any
+// Dirichlet boundary conditions and is left free 
+// in this method. Please note, that 
+// the interface between fluid and structure has no
+// physical boundary due to our formulation. Interface
+// conditions are automatically fulfilled: that is 
+// one major advantage of the `monolithic' formulation.
 template <int dim>
 void
-FSI_ALE_Problem<dim>::set_initial_bc(const double time)
-{
-  AffineConstraints<double> constraints;
-  constraints.clear();
+FSI_ALE_Problem<dim>::set_initial_bc (const double time)
+{ 
+  std::map<unsigned int,double> boundary_values;  
+  std::vector<bool> component_mask (number_coefficients, true);
+  // (Scalar) pressure
+  component_mask[dim+dim] = false;  
 
-  // Verschiebungsmaske (ux, uy) aktiv, Druck bleibt frei
-  ComponentMask displacement_mask(number_coefficients, false);
-  displacement_mask.set(0, true);             // ux
-  displacement_mask.set(1, true);              // uy
-  displacement_mask.set(dim + dim + 1, true);  // evtl. w-Komponente
+  // Because of Pressure inflow
+  component_mask[0] = false;
+  component_mask[1] = false;
+  
+  component_mask[dim+dim+1] = true;   //false; 
 
-  // Maske für feste Struktur (alle Displacements fixieren, Druck bleibt frei)
-  ComponentMask structure_mask(number_coefficients, true);
-  structure_mask.set(dim + dim, false); // Druck bleibt frei
+  VectorTools::interpolate_boundary_values (dof_handler,
+                0,
+                BoundaryParabel<dim>(time, u_y,
+                   compute_short_scale),
+                boundary_values,
+                component_mask); 
 
-  // Parabolisches Inflow-Profil auf Rand 0 und 1
-  VectorTools::interpolate_boundary_values(
-    dof_handler,
-    0,
-    BoundaryParabel<dim>(time, u_y, compute_short_scale),
-    constraints,
-    displacement_mask);
+  component_mask[0] = true;
+  component_mask[1] = true;
+  component_mask[dim+dim+1] = true;    
+  VectorTools::interpolate_boundary_values (dof_handler,
+                1,
+                BoundaryParabel<dim>(time, u_y,
+                   compute_short_scale),
+                boundary_values,
+                component_mask);    
+    
+  VectorTools::interpolate_boundary_values (dof_handler,
+                                              2,
+                                              /*BoundarySolid<dim>(),
+                                              boundary_values,
+                                              component_mask);*/
+                dealii::Functions::ZeroFunction<dim>(number_coefficients),
+                                              boundary_values,
+                                              component_mask);
 
-  VectorTools::interpolate_boundary_values(
-    dof_handler,
-    1,
-    BoundaryParabel<dim>(time, u_y, compute_short_scale),
-    constraints,
-    displacement_mask);
-
-  // Feste Struktur auf Rändern 2, 3, 80, 82
-  for (const auto boundary_id : {2, 3, 80, 82})
-  {
-    VectorTools::interpolate_boundary_values(
-      dof_handler,
-      boundary_id,
-      Functions::ZeroFunction<dim>(number_coefficients),
-      constraints,
-      structure_mask);
-  }
-
-  constraints.close();
-  constraints.distribute(solution);
+  VectorTools::interpolate_boundary_values (dof_handler,
+                                              3,
+                                              /*BoundarySolid<dim>(),
+                                              boundary_values,
+                                              component_mask);*/
+                dealii::Functions::ZeroFunction<dim>(number_coefficients),  
+                                              boundary_values,
+                                              component_mask);
+ 
+  VectorTools::interpolate_boundary_values (dof_handler,
+                80,
+                /*BoundarySolid<dim>(),
+                                              boundary_values,
+                                              component_mask);*/
+                dealii::Functions::ZeroFunction<dim>(number_coefficients),
+                boundary_values,
+                component_mask);
+    
+  VectorTools::interpolate_boundary_values (dof_handler,
+                82,
+                /*BoundarySolid<dim>(),
+                                              boundary_values,
+                                              component_mask);*/
+                dealii::Functions::ZeroFunction<dim>(number_coefficients), 
+                boundary_values,
+                component_mask);
+   
+  //std::cout << "dd" << std::endl;
+    
+  for (typename std::map<unsigned int, double>::const_iterator
+        i = boundary_values.begin();
+        i != boundary_values.end();
+        ++i)
+    solution(i->first) = i->second; 
 }
 
 // This function applies boundary conditions 
@@ -2784,55 +3152,66 @@ FSI_ALE_Problem<dim>::set_initial_bc(const double time)
 // conditions, now. 
 template <int dim>
 void
-FSI_ALE_Problem<dim>::set_newton_bc()
+FSI_ALE_Problem<dim>::set_newton_bc ()
 {
-  // Wichtig: diese constraints müssen VORHER erstellt worden sein im Newton-Setup
-  // (Hier wird NUR ergänzt, nicht ein neuer constraints Container gebaut!)
+  std::vector<bool> component_mask (number_coefficients, true);
+  component_mask[dim+dim] = false; 
 
-  // Maske für Verschiebungskorrekturen (ux, uy) aktiv
-  ComponentMask displacement_mask(number_coefficients, false);
-  displacement_mask.set(0, true);             // ux
-  displacement_mask.set(1, true);              // uy
-  displacement_mask.set(dim + dim + 1, true);  // evtl. w-Komponente
+  component_mask[dim+dim+1] = true; //false; 
 
-  // Strukturmaske (fixe Verschiebung, keine Bewegung)
-  ComponentMask structure_mask(number_coefficients, false);
-  structure_mask.set(0, true);
-  structure_mask.set(1, true);
-  // w-Komponente bleibt false
+  // Because of Pressure inflow
+  component_mask[0] = true;
+  component_mask[1] = true;      
+  VectorTools::interpolate_boundary_values (dof_handler,
+                0,
+                dealii::Functions::ZeroFunction<dim>(number_coefficients),                                             
+                constraints,
+                component_mask); 
+   
+  component_mask[0] = true;
+  component_mask[1] = true;  
+  component_mask[dim+dim+1] = false;     
 
-  // ZeroFunction für Newton-Korrekturen
-  Functions::ZeroFunction<dim> zero_function(number_coefficients);
+  VectorTools::interpolate_boundary_values (dof_handler,
+                                              2,
+                dealii::Functions::ZeroFunction<dim>(number_coefficients),  
+                                              constraints,
+                                              component_mask);
 
-  // Rand 0: Null-Bedingung für Verschiebung
-  VectorTools::interpolate_boundary_values(
-    dof_handler,
-    0,
-    zero_function,
-    constraints,
-    displacement_mask);
+  VectorTools::interpolate_boundary_values (dof_handler,
+                                              7,
+                dealii::Functions::ZeroFunction<dim>(number_coefficients),  
+                                              constraints,
+                                              component_mask);
 
-  // Struktur-Ränder: Null-Bedingung auf 2, 3, 7, 80, 82
-  for (const auto boundary_id : {2, 3, 7, 80, 82})
-  {
-    VectorTools::interpolate_boundary_values(
-      dof_handler,
-      boundary_id,
-      zero_function,
-      constraints,
-      structure_mask);
-  }
 
-  // Rand 1: keine Newton-Bedingung (Option: leere Maske setzen)
-  ComponentMask no_components(number_coefficients, false);
-  VectorTools::interpolate_boundary_values(
-    dof_handler,
-    1,
-    zero_function,
-    constraints,
-    no_components);
-}
+  VectorTools::interpolate_boundary_values (dof_handler,
+                                              3,
+                dealii::Functions::ZeroFunction<dim>(number_coefficients),  
+                                              constraints,
+                                              component_mask);
 
+  VectorTools::interpolate_boundary_values (dof_handler,
+                                              80,
+                dealii::Functions::ZeroFunction<dim>(number_coefficients),  
+                                              constraints,
+                                              component_mask);
+  VectorTools::interpolate_boundary_values (dof_handler,
+                82,
+                dealii::Functions::ZeroFunction<dim>(number_coefficients),  
+                constraints,
+                component_mask);   
+
+  component_mask[0] = false;
+  component_mask[1] = false;
+  component_mask[dim+dim+1] = false;    
+    
+  VectorTools::interpolate_boundary_values (dof_handler,
+                1,
+                dealii::Functions::ZeroFunction<dim>(number_coefficients),  
+                constraints,
+                component_mask);
+}  
 
 // In this function, we solve the linear systems
 // inside the nonlinear Newton iteration. We only
@@ -2869,6 +3248,131 @@ FSI_ALE_Problem<dim>::solve ()
   timer.leave_subsection(); 
 }
 
+template <int dim>
+void FSI_ALE_Problem<dim>::refine_grid()
+{
+  /*Vector<float> estimated_error_per_cell(triangulation.n_active_cells());
+  SolutionTransfer<dim, BlockVector<double>> solution_transfer(dof_handler);
+
+  // register the solution before refine
+  BlockVector<double> tmp_solution;
+  tmp_solution = old_timestep_solution;
+
+  // (B) Transfer vorbereiten
+  solution_transfer.prepare_for_coarsening_and_refinement(tmp_solution);
+
+  
+  KellyErrorEstimator<dim>::estimate(dof_handler,
+                                     QGauss<dim - 1>(fe.degree + 1),
+                                     {},
+                                     newton_update,
+                                     estimated_error_per_cell);
+
+  GridRefinement::refine_and_coarsen_fixed_number(triangulation,
+                                                  estimated_error_per_cell,
+                                                  0.3,
+                                                  0.03);
+  triangulation.execute_coarsening_and_refinement();
+
+  //transfer dofs
+  dof_handler.distribute_dofs(fe);
+
+  BlockVector<double> interpolated_solution;
+  interpolated_solution.reinit(tmp_solution);  
+  solution_transfer.interpolate(interpolated_solution);
+  old_timestep_solution = interpolated_solution;*/
+
+  // Schritt 1: Lösung kopieren
+  //BlockVector<double> old_solution_copy = solution;
+  BlockVector<double> old_solution_copy = old_timestep_solution;
+  old_solution_copy = solution;
+
+  // Schritt 2: SolutionTransfer vorbereiten
+  SolutionTransfer<dim, BlockVector<double>> solution_transfer(dof_handler);
+  solution_transfer.prepare_for_coarsening_and_refinement(old_solution_copy);
+
+  // Schritt 3: Fehlerindikator mit KellyErrorEstimator berechnen
+  Vector<float> estimated_error_per_cell(triangulation.n_active_cells());
+  KellyErrorEstimator<dim>::estimate(
+    dof_handler,
+    QGauss<dim - 1>(degree + 1), 
+    {}, 
+    old_timestep_solution,
+    estimated_error_per_cell,
+    fe.component_mask(FEValuesExtractors::Vector(5))
+  );
+
+  // Schritt 4: Markieren für Verfeinerung/Vergröberung
+  GridRefinement::refine_and_coarsen_fixed_number(
+    triangulation, estimated_error_per_cell,
+    0.3, // obere 30 % verfeinern
+    0.03 // untere 3 % vergröbern
+  );
+
+  // Refinement-Level begrenzen
+  const unsigned int max_level = 4;
+  for (const auto &cell : triangulation.active_cell_iterators())
+    if (cell->level() >= max_level)
+      cell->clear_refine_flag();
+
+  // Optional: Mindest-/Maximalzellgröße
+  triangulation.prepare_coarsening_and_refinement();
+  
+
+  double n_active_before = triangulation.n_active_cells();
+
+  triangulation.execute_coarsening_and_refinement();
+
+  double n_active_after = triangulation.n_active_cells();
+  std::cout << "Zellen vorher: " << n_active_before
+            << ", nachher: " << n_active_after
+            << ", netto hinzugefügt: " << (n_active_after - n_active_before)
+            << std::endl;
+
+  // Schritt 5: DoFs neu verteilen
+  dof_handler.distribute_dofs(fe);
+
+  std::vector<unsigned int> block_component (6,0);
+  block_component[0] = 0;                       //velocity
+  block_component[1] = 0;                       //velocity
+  block_component[dim] = 1;                     //displacement
+  block_component[dim+1] = 1;                   //displacement
+  block_component[dim+dim] = 2;                 //pressure
+  block_component[dim+dim+1] = 3;           //concentration
+ 
+  DoFRenumbering::component_wise (dof_handler, block_component);
+
+
+  std::vector<unsigned int> dofs_per_block (3);
+  dofs_per_block = DoFTools::count_dofs_per_fe_block (dof_handler, block_component);  
+  const unsigned int n_v = dofs_per_block[0],
+    n_u = dofs_per_block[1],
+    n_p = dofs_per_block[2],
+    n_c = dofs_per_block[3];
+
+  // Schritt 6: Neue Blockstruktur anlegen
+  BlockVector<double> interpolated_solution;
+      // Actual solution at time step n
+  interpolated_solution.reinit (4);
+  interpolated_solution.block(0).reinit (n_v);
+  interpolated_solution.block(1).reinit (n_u);
+  interpolated_solution.block(2).reinit (n_p);
+  interpolated_solution.block(3).reinit (n_c);
+ 
+  interpolated_solution.collect_sizes ();
+
+  // Schritt 7: Interpolieren
+  solution_transfer.interpolate(interpolated_solution);
+
+  // Schritt 8: Aktualisieren
+  old_timestep_solution = interpolated_solution;
+
+  solution = old_timestep_solution;
+
+  output_results (timestep_number+10000,solution);
+
+  }
+
 // This is the Newton iteration to solve the 
 // non-linear system of equations. First, we declare some
 // standard parameters of the solution method. Addionally,
@@ -2901,6 +3405,7 @@ void FSI_ALE_Problem<dim>::newton_iteration (const double time)
   // Application of the initial boundary conditions to the 
   // variational equations:
   set_initial_bc (time);
+
   assemble_system_rhs();
 
   double newton_residuum = system_rhs.linfty_norm(); 
@@ -2931,7 +3436,42 @@ void FSI_ALE_Problem<dim>::newton_iteration (const double time)
   
     if (newton_residuum/old_newton_residuum > nonlinear_rho)
     {
-      assemble_system_matrix ();  
+      assemble_system_matrix ();
+      std::set<unsigned int> null_dofs;
+      //std::cout << "Matrix m: " << system_matrix.m() << std::endl;
+      //std::cout << "Matrix n: " << system_matrix.n() << std::endl;
+
+      for (unsigned int i = 0; i < system_matrix.m(); ++i)
+      {
+          double row_sum = 0.0;
+          for (auto it = system_matrix.begin(i); it != system_matrix.end(i); ++it)
+              row_sum += std::abs(it->value());
+
+          if (row_sum == 0)
+          {
+              //std::cout << "WARNUNG: Zeile " << i << " ist Null!" << std::endl;
+              null_dofs.insert(i);
+          }
+      }
+
+      for (const auto &cell : dof_handler.active_cell_iterators())
+      {
+          std::vector<types::global_dof_index> local_dof_indices(fe.dofs_per_cell);
+          cell->get_dof_indices(local_dof_indices);
+
+          for (unsigned int i = 0; i < fe.dofs_per_cell; ++i)
+          {
+              if (null_dofs.count(local_dof_indices[i]) > 0)
+              {
+                  std::cout << "Null-DoF " << local_dof_indices[i]
+                            << " gehört zur Zelle " << cell->center()
+                            << " (Subdomain: " << cell->subdomain_id()
+                            << ", boundary? " << cell->at_boundary()
+                            << ", level: " << cell->level()
+                            << ")" << std::endl;
+              }
+          }
+      }
       // Only factorize when matrix is re-built
       A_direct.factorize(system_matrix);   
     }
@@ -3127,7 +3667,7 @@ void FSI_ALE_Problem<dim>::compute_drag_lift_fsi_fluid_tensor()
   const unsigned int dofs_per_cell = fe.dofs_per_cell;
   const unsigned int n_face_q_points = face_quadrature_formula.size();
 
-  std::vector<long unsigned int> local_dof_indices (dofs_per_cell);
+  std::vector<unsigned int> local_dof_indices (dofs_per_cell);
   std::vector<Vector<double> >  face_solution_values (n_face_q_points, 
                   Vector<double> (number_coefficients));
 
@@ -3228,7 +3768,7 @@ void FSI_ALE_Problem<dim>::compute_outflow()
   const unsigned int dofs_per_cell = fe.dofs_per_cell;
   const unsigned int n_face_q_points = face_quadrature_formula.size();
 
-  std::vector<long unsigned int> local_dof_indices (dofs_per_cell);
+  std::vector<unsigned int> local_dof_indices (dofs_per_cell);
   std::vector<Vector<double> >  face_solution_values (n_face_q_points, 
                   Vector<double> (number_coefficients));
 
@@ -3303,11 +3843,11 @@ void FSI_ALE_Problem<dim>::compute_functional_values()
   std::cout << "-----------------------------------" << std::endl;
   if (compute_short_scale)
   {
-    std::cout << "SScgm:    " << timestep_number << "   " << time << "  " << alpha_growth;
+    std::cout << "SScgm:    " << timestep_number << "   " << time << "  " ;//<< alpha_growth;
   }
   else 
   {
-    std::cout << "LScgm:    " << timestep_number << "   " << time << "  " << alpha_growth;
+    std::cout << "LScgm:    " << timestep_number << "   " << time << "  " ;//<< alpha_growth;
   }
   
   std::cout << std::endl;
@@ -3437,6 +3977,13 @@ void FSI_ALE_Problem<dim>::run ()
   u_y = 0.0;
   do
   { 
+    if( timestep_number != 0)
+    {
+      refine_grid();
+      setup_timestep();
+
+      //output_results (timestep_number+20000,solution);
+    }
     /*// Case 2: 50 long-scale steps and then 50 short scale steps with timestep = 0.02
     // 50 long-term steps
     // 75, 300, 150 short-term steps
@@ -3464,12 +4011,12 @@ void FSI_ALE_Problem<dim>::run ()
 
     max_no_timesteps = 15000; //250;
     if (timestep_number < 1)
-      timestep = 21600; //3600;//5400; //43200;//10800; //21600; //600;
+      timestep = 43200; //3600;//10800;//5400; //43200;//10800; //21600; //600;
     else 
-      timestep = 21600; //3600;//5400; //43200;//10800; //21600; //600;//86400.0;
+      timestep = 43200; //3600;//10800; //5400; //43200;//10800; //21600; //600;//86400.0;
 
     //compute_short_scale = 0.0;
-    alpha_growth = alpha_growth + gamma_zero * timestep * 1.0/(1.0 + drag/50.0);
+    //alpha_growth = alpha_growth + gamma_zero * timestep * 1.0/(1.0 + drag/50.0);
 
     std::cout << "Timestep " << timestep_number 
       << " (" << time_stepping_scheme << ") " 
@@ -3480,11 +4027,11 @@ void FSI_ALE_Problem<dim>::run ()
       << "===========================================" 
       << std::endl; 
         
-    std::cout << std::endl;
+    std::cout << std::endl; 
         
     // Compute next time step
     old_timestep_solution = solution;
-    newton_iteration (time);   
+    newton_iteration (time);  
 
     // Compute functional values: dx, dy, drag, lift
     std::cout << std::endl;
@@ -3517,6 +4064,7 @@ void FSI_ALE_Problem<dim>::run ()
 // as in all other deal.II tuturial steps. 
 int main () 
 {
+  std::signal(SIGSEGV, [](int){ std::cerr << "Segmentation fault triggered\n"; std::abort(); });
   try
   {
     deallog.depth_console (0);
